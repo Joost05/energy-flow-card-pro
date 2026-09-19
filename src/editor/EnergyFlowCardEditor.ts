@@ -1,4 +1,4 @@
-import { CardConfig, DeviceGroupConfig, PricingConfig, ResolvedConfig, normalizeConfig } from '../config/CardConfig';
+import { CardConfig, ColorConfig, DeviceGroupConfig, PricingConfig, ResolvedConfig, normalizeConfig } from '../config/CardConfig';
 import { hassLanguage, t } from '../helpers/i18n';
 import type { ConnectionConfig } from '../models/Connection';
 import { NodeConfig, advancedFieldsFor, fieldLabelKey, generateId } from '../models/Node';
@@ -53,6 +53,10 @@ input[type="text"], input[type="number"], select {
   font: inherit; font-size: 14px; padding: 9px 10px; border-radius: 8px; box-sizing: border-box; width: 100%;
   border: 1px solid var(--divider-color, #ccc); background: var(--card-background-color, #fff); color: var(--primary-text-color);
 }
+.color-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 8px; }
+.color-field { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 9px; border: 1px solid var(--divider-color, #ddd); border-radius: 8px; font-size: 12px; }
+.color-field input[type="color"] { width: 34px; height: 26px; border: 0; padding: 0; background: transparent; cursor: pointer; }
+.color-actions { display: flex; justify-content: flex-end; margin-top: 8px; }
 ha-entity-picker { width: 100%; }
 input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--primary-color, #03a9f4); outline-offset: 1px; }
 button.btn {
@@ -330,14 +334,25 @@ export class EnergyFlowCardEditor extends HTMLElement {
     });
     advanced.append(html('label', { class: 'check' }, invert, t('ed_invert', lang)));
 
-    // Achter een backup kunnen bepaalde verbruikers hangen: dan lopen die via de backup in plaats van direct via Home.
-    const backups = this.nodes.filter((n) => normalizeType(n.type) === 'backup' && n !== node);
+    // Verbruikers kunnen direct aan Home, achter een backup of achter een andere verbruiker hangen.
+    // Kandidaten die een lus zouden maken worden niet aangeboden.
+    const parentCandidates = this.nodes.filter((candidate) => {
+      if (candidate === node) return false;
+      const candidateType = normalizeType(candidate.type);
+      if (candidateType !== 'backup' && roleOf(candidateType ?? 'consumer') !== 'consumer') return false;
+      return !this.wouldCreateParentLoop(node, candidate);
+    });
     let parent: HTMLElement | undefined;
-    if (backups.length > 0 && roleOf(type) === 'consumer' && type !== 'backup') {
+    if (roleOf(type) === 'consumer' && type !== 'backup') {
       const parentSelect = html('select');
       parentSelect.append(html('option', { value: 'home' }, t('home', lang)));
-      for (const b of backups) parentSelect.append(html('option', { value: b.id ?? '' }, b.name || b.id || ''));
-      parentSelect.value = backups.some((b) => b.id === node.connected_to) ? (node.connected_to as string) : 'home';
+      for (const candidate of parentCandidates) {
+        parentSelect.append(html('option', { value: candidate.id ?? '' }, candidate.name || candidate.id || ''));
+      }
+      const current = parentCandidates.find((candidate) =>
+        !!node.connected_to && (candidate.id === node.connected_to || candidate.name?.toLowerCase() === node.connected_to.toLowerCase()),
+      );
+      parentSelect.value = current?.id ?? 'home';
       parentSelect.addEventListener('change', () => this.setParent(node, parentSelect.value));
       parent = this.field(t('ed_connected_to', lang), parentSelect);
     }
@@ -468,7 +483,25 @@ export class EnergyFlowCardEditor extends HTMLElement {
     last.scrollIntoView({ block: 'nearest' });
   }
 
-  /** Hang een apparaat aan Home of aan een backup, ook in een handmatige lijst met verbindingen. */
+  /** Zou `node` onder `candidate` hangen een lus maken? */
+  private wouldCreateParentLoop(node: NodeConfig, candidate: NodeConfig): boolean {
+    const nodeId = node.id ?? '';
+    const nodeName = node.name?.toLowerCase();
+    const byRef = (ref: string): NodeConfig | undefined => {
+      const lower = ref.toLowerCase();
+      return this.nodes.find((n) => n.id === ref) ?? this.nodes.find((n) => n.name?.toLowerCase() === lower);
+    };
+    const seen = new Set<NodeConfig>();
+    let current: NodeConfig | undefined = candidate;
+    while (current && !seen.has(current)) {
+      if (current === node || (!!nodeId && current.id === nodeId) || (!!nodeName && current.name?.toLowerCase() === nodeName)) return true;
+      seen.add(current);
+      current = current.connected_to ? byRef(current.connected_to) : undefined;
+    }
+    return false;
+  }
+
+  /** Hang een apparaat aan Home, een backup of een andere verbruiker, ook bij handmatige verbindingen. */
   private setParent(node: NodeConfig, parentId: string): void {
     if (parentId === 'home') delete node.connected_to;
     else node.connected_to = parentId;
@@ -484,10 +517,9 @@ export class EnergyFlowCardEditor extends HTMLElement {
           resolved.connections.forEach((c, i) => {
             const raw = this.config.connections![i];
             if (!raw) return;
-            const otherId = c.from === me.id ? c.to : c.to === me.id ? c.from : null;
-            const other = otherId ? resolved.nodes.find((n) => n.id === otherId) : undefined;
-            const isParentLink = other && (other.role === 'home' || other.type === 'backup');
-            if (!isParentLink) keep.push(raw);
+            const from = resolved.nodes.find((n) => n.id === c.from);
+            const isIncomingParentLink = c.to === me.id && from && (from.role === 'home' || from.type === 'backup' || from.role === 'consumer');
+            if (!isIncomingParentLink) keep.push(raw);
           });
           keep.push({ from: parent.id, to: me.id });
           this.config.connections = keep;
@@ -501,10 +533,12 @@ export class EnergyFlowCardEditor extends HTMLElement {
   private removeDevice(node: NodeConfig): void {
     const index = this.nodes.indexOf(node);
     if (index < 0) return;
-    // Apparaten die achter deze backup hingen, hangen daarna weer aan Home.
+    const childIds: string[] = [];
+    // Apparaten die achter deze node hingen, hangen daarna weer aan Home.
     for (const other of this.nodes) {
       if (other !== node && other.connected_to && (other.connected_to === node.id || other.connected_to === node.name)) {
         delete other.connected_to;
+        if (other.id) childIds.push(other.id);
       }
     }
     const resolved = this.resolve();
@@ -515,6 +549,7 @@ export class EnergyFlowCardEditor extends HTMLElement {
         resolved.connections.forEach((c, i) => {
           if (c.from !== id && c.to !== id && this.config.connections![i]) keep.push(this.config.connections![i]!);
         });
+        for (const childId of childIds) keep.push({ from: 'home', to: childId });
         this.config.connections = keep;
       }
     }
@@ -526,8 +561,22 @@ export class EnergyFlowCardEditor extends HTMLElement {
   private changeType(node: NodeConfig, type: NodeType): void {
     const previousRole = roleOf(normalizeType(node.type) ?? 'consumer');
     node.type = type;
-    // Alleen gewone apparaten kunnen achter een backup hangen.
+    // Alleen gewone verbruikers kunnen een parent kiezen.
     if (roleOf(type) !== 'consumer' || type === 'backup') delete node.connected_to;
+    // Als deze node geen verbruiker/backup meer is, mogen bestaande kinderen er niet achter blijven hangen.
+    if (roleOf(type) !== 'consumer') {
+      const childIds: string[] = [];
+      for (const other of this.nodes) {
+        if (other !== node && other.connected_to && (other.connected_to === node.id || other.connected_to === node.name)) {
+          delete other.connected_to;
+          if (other.id) childIds.push(other.id);
+        }
+      }
+      if (this.config.connections && node.id && childIds.length) {
+        this.config.connections = this.config.connections.filter((c) => !(c.from === node.id && childIds.includes(c.to)));
+        for (const childId of childIds) this.config.connections.push({ from: 'home', to: childId });
+      }
+    }
     // Verbruikers ontvangen van Home, bronnen sturen naar Home: draai bestaande Home-verbindingen indien nodig om.
     const resolved = this.resolve();
     if (previousRole !== roleOf(type) && typeof resolved !== 'string' && this.config.connections) {
@@ -708,6 +757,37 @@ export class EnergyFlowCardEditor extends HTMLElement {
 
   // ----- Stap 4: Voorbeeld --------------------------------------------------------------------
 
+  private renderColors(): HTMLElement {
+    const lang = this.uiLang;
+    const defaults: Record<keyof ColorConfig, string> = {
+      solar: '#f0a202', grid: '#5a78d1', battery: '#33b07a', home: '#727272', consumer: '#2fa4b8',
+      ev: '#9a6fd6', backup: '#c95a8a', generator: '#cf6a4e', producer: '#b5a220',
+    };
+    const labels: Array<[keyof ColorConfig, string]> = [
+      ['solar', 'color_solar'], ['grid', 'color_grid'], ['battery', 'color_battery'], ['home', 'color_home'],
+      ['consumer', 'color_consumer'], ['ev', 'color_ev'], ['backup', 'color_backup'], ['generator', 'color_generator'], ['producer', 'color_producer'],
+    ];
+    const grid = html('div', { class: 'color-grid' });
+    for (const [key, labelKey] of labels) {
+      const input = html('input', { type: 'color', value: this.config.colors?.[key] ?? defaults[key], 'aria-label': t(labelKey, lang) }) as HTMLInputElement;
+      input.addEventListener('input', () => {
+        if (!this.config.colors) this.config.colors = {};
+        this.config.colors[key] = input.value;
+        this.commit();
+        this.render();
+      });
+      grid.append(html('label', { class: 'color-field' }, html('span', {}, t(labelKey, lang)), input));
+    }
+    const reset = html('button', { class: 'btn', type: 'button' }, t('colors_reset', lang));
+    reset.addEventListener('click', () => { delete this.config.colors; this.commit(); this.render(); });
+    return html('details', {},
+      html('summary', {}, t('ed_colors', lang)),
+      html('p', { class: 'hint' }, t('ed_colors_hint', lang)),
+      grid,
+      html('div', { class: 'color-actions' }, reset),
+    );
+  }
+
   private renderPreview(): HTMLElement {
     const lang = this.uiLang;
     const resolved = this.resolve();
@@ -759,6 +839,7 @@ export class EnergyFlowCardEditor extends HTMLElement {
       { class: 'stack' },
       html('p', { class: 'hint' }, t('ed_preview_hint', lang)),
       this.field(t('ed_layout', lang), layoutSelect),
+      this.renderColors(),
       card,
       html('label', { class: 'check' }, demo, t('ed_demo', lang)),
     );

@@ -32,6 +32,30 @@ export interface ResolvedPricingConfig {
   exportPriceEntity?: string;
 }
 
+export interface ColorConfig {
+  solar?: string;
+  grid?: string;
+  battery?: string;
+  home?: string;
+  consumer?: string;
+  ev?: string;
+  backup?: string;
+  generator?: string;
+  producer?: string;
+}
+
+export interface ResolvedColorConfig {
+  solar?: string;
+  grid?: string;
+  battery?: string;
+  home?: string;
+  consumer?: string;
+  ev?: string;
+  backup?: string;
+  generator?: string;
+  producer?: string;
+}
+
 export interface DeviceGroupConfig {
   id?: string;
   name: string;
@@ -70,6 +94,8 @@ export interface CardConfig {
   layout?: { mode?: 'flow' | 'circle' | 'straight' | 'auto' | 'eniris'; positions?: Record<string, Point> };
   /** Optional energy price configuration. */
   pricing?: PricingConfig;
+  /** Optional color overrides for node/flow categories. Any valid CSS color can be used. */
+  colors?: ColorConfig;
 }
 
 /** Layout blijft los van Node en Connection: "waar staat het?" Posities zijn percentages (0-100). */
@@ -92,6 +118,7 @@ export interface ResolvedConfig {
   connections: Connection[];
   layout: LayoutConfig;
   pricing: ResolvedPricingConfig;
+  colors: ResolvedColorConfig;
 }
 
 export class ConfigError extends Error {
@@ -108,6 +135,9 @@ const DEMO_NODES: NodeConfig[] = [
   { name: 'Batterij', type: 'battery' },
   { name: 'Laadpaal', type: 'ev_charger' },
   { name: 'Warmtepomp', type: 'heat_pump' },
+  { name: 'Bureau', type: 'consumer' },
+  { name: 'Computer', type: 'consumer', connected_to: 'Bureau' },
+  { name: '3D-printer', type: 'consumer', connected_to: 'Bureau' },
   { name: 'Backup', type: 'backup' },
   { name: 'Server', type: 'consumer', connected_to: 'Backup' },
 ];
@@ -146,6 +176,7 @@ export function normalizeConfig(raw: unknown): ResolvedConfig {
   const groups = parseGroups(raw.groups, nodes, connections);
   const layout = parseLayout(raw.layout);
   const pricing = parsePricing(raw.pricing ?? (demo ? { mode: 'fixed', import_price: 0.31, export_price: 0.09 } : undefined));
+  const colors = parseColors(raw.colors);
 
   const powerFormat = (raw.power_format ?? 'w') as PowerFormat;
   if (powerFormat !== 'w' && powerFormat !== 'kw' && powerFormat !== 'auto') {
@@ -164,9 +195,24 @@ export function normalizeConfig(raw: unknown): ResolvedConfig {
     connections,
     layout,
     pricing,
+    colors,
   };
 }
 
+
+function parseColors(raw: unknown): ResolvedColorConfig {
+  if (raw === undefined || raw === null) return {};
+  if (!isRecord(raw)) throw new ConfigError('"colors" moet een object zijn.');
+  const result: ResolvedColorConfig = {};
+  const keys = ['solar', 'grid', 'battery', 'home', 'consumer', 'ev', 'backup', 'generator', 'producer'] as const;
+  for (const key of keys) {
+    const value = raw[key];
+    if (value === undefined || value === null || value === '') continue;
+    if (typeof value !== 'string' || !value.trim()) throw new ConfigError(`"colors.${key}" moet een CSS-kleur zijn.`);
+    result[key] = value.trim();
+  }
+  return result;
+}
 
 function optionalPrice(value: unknown, key: string): number | undefined {
   if (value === undefined || value === null || value === '') return undefined;
@@ -233,8 +279,14 @@ function parseNodes(raw: unknown[]): EnergyNode[] {
   });
 }
 
-/** `connected_to` mag alleen bij een gewoon apparaat en moet naar een backup verwijzen (Home is de standaard). */
+/** `connected_to` mag alleen bij een verbruiker en kan naar Home, een backup of een andere verbruiker verwijzen. */
 function checkConnectedTo(nodes: EnergyNode[]): void {
+  const parentOf = (node: EnergyNode): EnergyNode | undefined => {
+    const ref = node.config.connected_to;
+    if (typeof ref !== 'string' || !ref.trim()) return nodes.find((n) => n.role === 'home');
+    return findNode(nodes, ref);
+  };
+
   for (const node of nodes) {
     const ref = node.config.connected_to;
     if (ref === undefined) continue;
@@ -245,8 +297,25 @@ function checkConnectedTo(nodes: EnergyNode[]): void {
     }
     const target = findNode(nodes, ref);
     if (!target) throw new ConfigError(`Node "${label}": "connected_to" verwijst naar "${ref}", en die node bestaat niet.`);
-    if (target.role !== 'home' && target.type !== 'backup') {
-      throw new ConfigError(`Node "${label}": "connected_to" moet naar Home of een backup-node verwijzen, niet naar "${ref}".`);
+    if (target.id === node.id) throw new ConfigError(`Node "${label}": "connected_to" mag niet naar zichzelf verwijzen.`);
+    if (target.role !== 'home' && target.type !== 'backup' && target.role !== 'consumer') {
+      throw new ConfigError(`Node "${label}": "connected_to" moet naar Home, een backup of een verbruiker verwijzen, niet naar "${ref}".`);
+    }
+  }
+
+  // Volg iedere parent-keten. Zo voorkomen we A → B → A (of langere lussen).
+  for (const node of nodes) {
+    if (node.role !== 'consumer' || node.type === 'backup') continue;
+    const seen = new Set<string>([node.id]);
+    let current: EnergyNode | undefined = node;
+    while (current?.config.connected_to) {
+      const parent = parentOf(current);
+      if (!parent || parent.role === 'home' || parent.type === 'backup') break;
+      if (seen.has(parent.id)) {
+        throw new ConfigError(`Node "${node.name ?? node.id}": "connected_to" veroorzaakt een lus in de verbruiker-keten.`);
+      }
+      seen.add(parent.id);
+      current = parent;
     }
   }
 }
@@ -291,10 +360,10 @@ function parseGroups(raw: unknown, nodes: EnergyNode[], connections: Connection[
   };
   const parentOfMember = (node: EnergyNode): string => {
     if (node.role !== 'consumer' || node.type === 'backup') return 'home';
-    for (const c of connections) {
-      const otherId = c.from === node.id ? c.to : c.to === node.id ? c.from : null;
-      const other = otherId ? nodes.find((n) => n.id === otherId) : undefined;
-      if (other?.type === 'backup') return other.id;
+    const incoming = connections.find((c) => c.to === node.id);
+    if (incoming) {
+      const parent = nodes.find((n) => n.id === incoming.from);
+      if (parent && (parent.role === 'home' || parent.type === 'backup' || parent.role === 'consumer')) return parent.id;
     }
     return 'home';
   };
@@ -317,6 +386,10 @@ function parseGroups(raw: unknown, nodes: EnergyNode[], connections: Connection[
     if (members.some((m) => parentOfMember(m) !== parentId)) throw new ConfigError(`Groep "${name}" bevat apparaten met verschillende aansluitpunten.`);
     const display = item.display === 'individual' ? 'individual' : 'grouped';
     if (display === 'grouped') {
+      for (const member of members) {
+        const hasChildren = connections.some((c) => c.from === member.id && nodes.some((n) => n.id === c.to && n.role === 'consumer' && n.type !== 'backup'));
+        if (hasChildren) throw new ConfigError(`Groep "${name}": parent-apparaat "${member.name ?? member.id}" kan niet gegroepeerd worden zolang er verbruikers achter hangen.`);
+      }
       for (const member of members) {
         if (used.has(member.id)) throw new ConfigError(`Apparaat "${member.name ?? member.id}" staat in meer dan één zichtbare groep.`);
         used.add(member.id);

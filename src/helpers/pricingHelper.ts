@@ -151,21 +151,19 @@ function integrateCumulativeEnergy(
  * Calculate today's signed grid financial balance from cumulative import/export energy.
  * Positive = net feed-in revenue. Negative = net import cost.
  */
-export async function fetchTodayGridFinancials(
+export async function fetchGridFinancialsRange(
   hass: Hass,
   importEnergyEntity: string | undefined,
   exportEnergyEntity: string | undefined,
   pricing: ResolvedPricingConfig,
-  now = Date.now(),
+  start: number,
+  end = Date.now(),
 ): Promise<TodayGridFinancials | null> {
   if (!hass.callApi || pricing.mode === 'none') return null;
   const importState = importEnergyEntity ? hass.states[importEnergyEntity] : undefined;
   const exportState = exportEnergyEntity ? hass.states[exportEnergyEntity] : undefined;
   if (!importState && !exportState) return null;
-
-  const startDate = new Date(now);
-  startDate.setHours(0, 0, 0, 0);
-  const start = startDate.getTime();
+  const now = end;
   const ids: string[] = [];
   if (importEnergyEntity) ids.push(importEnergyEntity);
   if (exportEnergyEntity && exportEnergyEntity !== importEnergyEntity) ids.push(exportEnergyEntity);
@@ -176,7 +174,7 @@ export async function fetchTodayGridFinancials(
   if (ids.length === 0) return null;
 
   const path = `history/period/${new Date(start).toISOString()}?filter_entity_id=${encodeURIComponent(ids.join(','))}` +
-    `&end_time=${encodeURIComponent(new Date(now).toISOString())}&minimal_response&no_attributes&significant_changes_only`;
+    `&end_time=${encodeURIComponent(new Date(end).toISOString())}&minimal_response&no_attributes&significant_changes_only`;
 
   try {
     const response = await hass.callApi<RawHistoryState[][]>('GET', path);
@@ -204,6 +202,20 @@ export async function fetchTodayGridFinancials(
   } catch {
     return null;
   }
+}
+
+
+/** Calculate today's signed grid financial balance. */
+export async function fetchTodayGridFinancials(
+  hass: Hass,
+  importEnergyEntity: string | undefined,
+  exportEnergyEntity: string | undefined,
+  pricing: ResolvedPricingConfig,
+  now = Date.now(),
+): Promise<TodayGridFinancials | null> {
+  const startDate = new Date(now);
+  startDate.setHours(0, 0, 0, 0);
+  return fetchGridFinancialsRange(hass, importEnergyEntity, exportEnergyEntity, pricing, startDate.getTime(), now);
 }
 
 /** Backwards-compatible helper: feed-in revenue only. */

@@ -1,4 +1,5 @@
 import type { HistoryPoint } from '../helpers/historyHelper';
+import type { EnergyStatsPeriod } from '../helpers/energyStatsHelper';
 import { t } from '../helpers/i18n';
 import { formatPower, PowerFormat } from '../helpers/stateHelper';
 import type { EntityStatus } from '../types/EntityStatus';
@@ -26,6 +27,14 @@ export interface PhaseGraphSeries {
   cssClass: 'phase-l1' | 'phase-l2' | 'phase-l3';
 }
 
+
+export interface EnergyStatsPopupModel {
+  selected: EnergyStatsPeriod;
+  loading: boolean;
+  rows: PopupRow[];
+  onSelect(period: EnergyStatsPeriod): void;
+}
+
 export interface PhaseGraphModel {
   enabled: boolean;
   series: PhaseGraphSeries[];
@@ -43,6 +52,7 @@ export interface PopupModel {
   history: HistoryState;
   phases?: PhaseGraphModel;
   diagnostics?: DiagnosticPopupModel;
+  energyStats?: EnergyStatsPopupModel;
   note?: string;
   powerFormat: PowerFormat;
   language?: string;
@@ -412,6 +422,31 @@ export class Popup {
 
     this.body.replaceChildren(big, graphBox);
     if (model.rows.length > 0) this.body.append(rows);
+    if (model.energyStats) {
+      const stats = html('section', { class: 'energy-stats' }, html('h3', {}, t('energy_costs', language)));
+      const tabs = html('div', { class: 'energy-stats-tabs', role: 'tablist' });
+      const periods: Array<[EnergyStatsPeriod, string]> = [
+        ['today', t('period_today', language)],
+        ['week', t('period_week', language)],
+        ['month', t('period_month', language)],
+      ];
+      for (const [period, label] of periods) {
+        const button = html('button', { type: 'button', class: `energy-stats-tab${model.energyStats.selected === period ? ' active' : ''}` }, label);
+        button.addEventListener('click', () => model.energyStats?.onSelect(period));
+        tabs.append(button);
+      }
+      stats.append(tabs);
+      if (model.energyStats.loading) {
+        stats.append(html('div', { class: 'energy-stats-loading' }, t('loading', language)));
+      } else if (model.energyStats.rows.length === 0) {
+        stats.append(html('div', { class: 'energy-stats-loading' }, t('energy_stats_unavailable', language)));
+      } else {
+        const statRows = html('dl', { class: 'energy-stats-rows' });
+        for (const row of model.energyStats.rows) statRows.append(html('dt', {}, row.label), html('dd', {}, row.value));
+        stats.append(statRows);
+      }
+      this.body.append(stats);
+    }
     if (model.diagnostics) {
       const box = html('section', { class: `diagnostics diagnostics-${model.diagnostics.severity}` },
         html('div', { class: 'diagnostics-head' },

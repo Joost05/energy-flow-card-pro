@@ -43,7 +43,7 @@ export interface NodeConfig extends Partial<Record<AdvancedField, string>> {
   power_entity?: string;
   /** Draait het teken van de vermogenssensor om. */
   invert?: boolean;
-  /** Alleen voor verbruikers: hangt dit apparaat achter een backup (naam of id)? Zonder deze optie hangt het aan Home. */
+  /** Alleen voor verbruikers: hangt dit apparaat achter Home, een backup of een andere verbruiker (naam of id)? Zonder deze optie hangt het aan Home. */
   connected_to?: string;
   entities?: ExtraEntity[];
   /** Interne markering voor een virtuele groep-node. */

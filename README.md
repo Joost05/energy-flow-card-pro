@@ -9,6 +9,7 @@ A custom Home Assistant Lovelace card for advanced live energy flows, device-lev
 - Adaptive Flow layout that sizes itself to the actual content
 - Automatic multi-row wrapping for larger installations
 - Compact backup-device grids
+- Hierarchical consumer branches (for example Desk smart plug → PC / TV / console / 3D printer)
 - Optional device groups with summed live power or individual display
 - Group detail popups with member values and 24-hour history
 - Icon dropdown with common MDI presets plus a custom `mdi:` option
@@ -22,10 +23,15 @@ A custom Home Assistant Lovelace card for advanced live energy flows, device-lev
 - Optional electricity pricing with fixed import/export tariffs or Home Assistant price entities
 - Live grid cost/revenue rate plus signed **Revenue today** (export revenue minus import cost) in the Grid detail popup
 - Optional three-phase Grid detail: L1/L2/L3 power history in one graph, plus optional phase voltage/current measurements
-- Demo mode with example energy prices for testing without sensors
+- Home popup with Today / This week / This month energy and cost statistics
+- Period import cost, feed-in revenue, net cost, self-consumption and self-sufficiency when enough energy counters are configured
+- Demo mode with example energy prices and period statistics for testing without sensors
 
 ## Version history
 
+- **0.15.0** — Adds configurable energy-type colors, a compact replay scrubber with contextual Live button, and coalesced Home Assistant state rendering for larger dashboards.
+- **0.14.0** — Adds multi-level consumer branches with parent/child power flows, loop protection and hierarchy-aware layouts.
+- **0.13.0** — Adds Home energy/cost statistics for today, week and month, including import/export totals, net cost and self-consumption metrics.
 - **0.12.1** — Fixes Demo replay and preloads one synchronized history timeline for the complete card.
 - **0.12.0** — Historical replay of the complete card with a 24-hour scrubber and Live return.
 
@@ -244,6 +250,43 @@ nodes:
 
 Open the Grid node and enable **Show phases** to switch the graph from total Grid power to L1/L2/L3. Phase imbalance is intentionally not calculated.
 
+
+## Hierarchical consumers
+
+A consumer can be connected behind another consumer. This is useful when a parent smart plug measures a complete desk, rack, room or power strip while individual devices inside that branch also have their own power sensors.
+
+```yaml
+nodes:
+  - id: desk
+    name: Desk
+    type: consumer
+    power_entity: sensor.desk_power
+  - id: computer
+    name: Computer
+    type: consumer
+    power_entity: sensor.computer_power
+    connected_to: desk
+  - id: tv
+    name: TV
+    type: consumer
+    power_entity: sensor.tv_power
+    connected_to: desk
+  - id: playstation
+    name: PlayStation
+    type: consumer
+    power_entity: sensor.playstation_power
+    connected_to: desk
+  - id: printer_3d
+    name: 3D printer
+    type: consumer
+    power_entity: sensor.printer_3d_power
+    connected_to: desk
+```
+
+The Desk sensor is treated as the measured total for that Home branch. The child devices are a breakdown of that total and are **not added to Home again**, so the hierarchy does not double-count power. Multiple levels are supported. Parent loops are rejected automatically.
+
+In the visual editor, use **Connected to** on a consumer to select Home, Backup or another consumer. Choices that would create a loop are hidden.
+
 ## Optional device groups
 
 Groups do not replace the underlying devices. They only change how those devices are presented.
@@ -299,6 +342,12 @@ Device names entered by the user are never translated automatically.
 All 24-hour power graphs can be inspected directly. Hover with a mouse or tap/drag on a touch device to show the time and power at that point. When the Grid phase view is enabled, the inspector shows L1, L2, L3 and their combined total.
 
 When pricing and cumulative Grid import/export energy entities are configured, **Revenue today** is a signed financial result: export revenue minus import cost. It can therefore be negative on a day where import costs are higher than feed-in revenue.
+
+## Colors and compact replay
+
+Version 0.15 adds optional color overrides for Solar, Grid, Battery, Home, Consumers, EV chargers, Backup, Generator and Producer nodes. Use the visual editor under **Preview → Colors**, or configure `colors:` in YAML. Connections automatically use the matching node-type color.
+
+The historical replay control is now a single compact row. Moving the slider enters replay mode; while replay is active a **Live** button appears at the far right. Returning to Live hides that button again.
 
 ## Diagnostics
 

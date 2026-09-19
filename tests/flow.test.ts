@@ -263,3 +263,24 @@ describe('backup met apparaten erachter', () => {
     assert.equal(computeHomeReading(home, cfg.nodes, cfg.connections, flows).watts, 500);
   });
 });
+
+
+describe('hiërarchische verbruikers v0.14', () => {
+  it('gebruikt parentvermogen voor de Home-tak en childvermogen voor de uitsplitsing', () => {
+    const cfg = normalizeConfig({
+      nodes: [
+        { name: 'Bureau', type: 'consumer', power_entity: 'sensor.desk' },
+        { name: 'Computer', type: 'consumer', power_entity: 'sensor.pc', connected_to: 'Bureau' },
+        { name: 'TV', type: 'consumer', power_entity: 'sensor.tv', connected_to: 'Bureau' },
+      ],
+    });
+    const hass: Hass = { states: { 'sensor.desk': state('500'), 'sensor.pc': state('220'), 'sensor.tv': state('90') } };
+    const readings = new Map<string, NodeReading>();
+    for (const n of cfg.nodes) if (n.role !== 'home') readings.set(n.id, readNode(n, hass));
+    const flows = computeFlows(cfg.nodes, cfg.connections, readings, hass);
+    const value = (from: string, to: string) => flows.get(cfg.connections.find((c) => c.from === from && c.to === to)!.id);
+    assert.equal(value('home', 'bureau'), 500);
+    assert.equal(value('bureau', 'computer'), 220);
+    assert.equal(value('bureau', 'tv'), 90);
+  });
+});

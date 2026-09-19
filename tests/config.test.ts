@@ -145,8 +145,30 @@ describe('apparaten achter een backup (connected_to)', () => {
   });
   it('geeft een duidelijke fout bij een onbekende of verkeerde verwijzing', () => {
     assert.throws(() => normalizeConfig({ nodes: nodes.map((n) => (n.connected_to ? { ...n, connected_to: 'Nergens' } : n)) }), /bestaat niet/);
-    assert.throws(() => normalizeConfig({ nodes: nodes.map((n) => (n.connected_to ? { ...n, connected_to: 'PC' } : n)) }), /Home of een backup/);
+    const chained = normalizeConfig({ nodes: nodes.map((n) => (n.connected_to ? { ...n, connected_to: 'PC' } : n)) });
+    assert.ok(chained.connections.some((c) => c.from === 'pc' && c.to === 'server'));
     assert.throws(() => normalizeConfig({ nodes: [{ name: 'Zon', type: 'solar', power_entity: 'sensor.z', connected_to: 'Backup' }, nodes[1]] }), /alleen bij een apparaat/);
+  });
+  it('ondersteunt meerdere niveaus van verbruikers zonder dubbele Home-verbindingen', () => {
+    const cfg = normalizeConfig({
+      nodes: [
+        { name: 'Bureau', type: 'consumer', power_entity: 'sensor.desk' },
+        { name: 'Computer', type: 'consumer', power_entity: 'sensor.pc', connected_to: 'Bureau' },
+        { name: 'Monitor', type: 'consumer', power_entity: 'sensor.monitor', connected_to: 'Computer' },
+      ],
+    });
+    assert.ok(cfg.connections.some((c) => c.from === 'home' && c.to === 'bureau'));
+    assert.ok(cfg.connections.some((c) => c.from === 'bureau' && c.to === 'computer'));
+    assert.ok(cfg.connections.some((c) => c.from === 'computer' && c.to === 'monitor'));
+    assert.ok(!cfg.connections.some((c) => c.from === 'home' && c.to === 'computer'));
+  });
+  it('weigert parent-lussen', () => {
+    assert.throws(() => normalizeConfig({
+      nodes: [
+        { name: 'A', type: 'consumer', connected_to: 'B' },
+        { name: 'B', type: 'consumer', connected_to: 'A' },
+      ],
+    }), /lus/);
   });
   it('een handmatige lijst met verbindingen gaat voor', () => {
     const cfg = normalizeConfig({ nodes, connections: [{ from: 'Home', to: 'Server' }] });
@@ -233,5 +255,19 @@ describe('three-phase grid configuration', () => {
     const grid = cfg.nodes.find((node) => node.type === 'grid')!;
     assert.equal(grid.config.phase_l1_power_entity, 'sensor.l1');
     assert.equal(grid.config.phase_l3_power_entity, 'sensor.l3');
+  });
+});
+
+
+describe('custom colors', () => {
+  it('preserves optional energy-type color overrides', () => {
+    const cfg = normalizeConfig({ colors: { solar: '#112233', grid: 'rgb(1 2 3)', consumer: 'var(--accent-color)' } });
+    assert.equal(cfg.colors.solar, '#112233');
+    assert.equal(cfg.colors.grid, 'rgb(1 2 3)');
+    assert.equal(cfg.colors.consumer, 'var(--accent-color)');
+  });
+
+  it('defaults to no color overrides', () => {
+    assert.deepEqual(normalizeConfig({}).colors, {});
   });
 });

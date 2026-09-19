@@ -13,6 +13,7 @@ import { nearestHistoryPoint, replayRange } from '../helpers/replayHelper';
 import { hassLanguage, t } from '../helpers/i18n';
 import { deriveL1History, deriveL1Power } from '../helpers/phaseHelper';
 import { currentGridRate, fetchTodayGridFinancials, formatCurrency, formatPrice, readPrices } from '../helpers/pricingHelper';
+import { demoEnergyStats, fetchEnergyStats, type EnergyStats, type EnergyStatsPeriod } from '../helpers/energyStatsHelper';
 import { applyGroupReadings, buildDisplayGraph } from '../helpers/groupHelper';
 import { formatPower, parsePower } from '../helpers/stateHelper';
 import { HOME_RADIUS, NODE_RADIUS, computeLayout } from '../layout/AutoLayout';
@@ -59,7 +60,11 @@ export class EnergyFlowCard extends HTMLElement {
   private preloadTimer?: number;
   private todayGridBalance?: { value: number | null; fetchedAt: number };
   private todayGridBalanceInFlight?: Promise<void>;
+  private energyStatsPeriod: EnergyStatsPeriod = 'today';
+  private energyStats = new Map<EnergyStatsPeriod, { value: EnergyStats | null; fetchedAt: number }>();
+  private energyStatsInFlight = new Map<EnergyStatsPeriod, Promise<void>>();
   private timer?: number;
+  private updateFrame?: number;
   private replayActive = false;
   private replayTimestamp?: number;
   private replayControls?: HTMLElement;
@@ -90,6 +95,9 @@ export class EnergyFlowCard extends HTMLElement {
     this.cancelHistoryPreload();
     this.todayGridBalance = undefined;
     this.todayGridBalanceInFlight = undefined;
+    this.energyStatsPeriod = 'today';
+    this.energyStats.clear();
+    this.energyStatsInFlight.clear();
     this.replayActive = false;
     this.replayTimestamp = undefined;
     this.replayControls = undefined;
@@ -101,9 +109,10 @@ export class EnergyFlowCard extends HTMLElement {
   set hass(hass: Hass) {
     this._hass = hass;
     if (!this.config?.demo) {
-      this.update();
+      this.scheduleUpdate();
       this.scheduleHistoryPreload();
       void this.ensureTodayGridBalance();
+      if (this.openNodeId === 'home') void this.ensureEnergyStats(this.energyStatsPeriod);
     }
   }
 
@@ -145,6 +154,10 @@ export class EnergyFlowCard extends HTMLElement {
   disconnectedCallback(): void {
     this.motionQuery?.removeEventListener('change', this.onMotionChange);
     this.cancelHistoryPreload();
+    if (this.updateFrame !== undefined) {
+      window.cancelAnimationFrame(this.updateFrame);
+      this.updateFrame = undefined;
+    }
     this.stopTimer();
   }
 
@@ -165,6 +178,20 @@ export class EnergyFlowCard extends HTMLElement {
     this.groupNodes = display?.groupNodes ?? new Map();
 
     const card = html('ha-card', { class: customElements.get('ha-card') ? '' : 'fallback' });
+    if (cfg) {
+      const colorVars: Record<string, string | undefined> = {
+        '--efc-solar': cfg.colors.solar,
+        '--efc-grid': cfg.colors.grid,
+        '--efc-battery': cfg.colors.battery,
+        '--efc-home': cfg.colors.home,
+        '--efc-consumer': cfg.colors.consumer,
+        '--efc-ev': cfg.colors.ev,
+        '--efc-backup': cfg.colors.backup,
+        '--efc-generator': cfg.colors.generator,
+        '--efc-producer': cfg.colors.producer,
+      };
+      for (const [name, value] of Object.entries(colorVars)) if (value) card.style.setProperty(name, value);
+    }
     if (cfg?.title) card.append(html('div', { class: 'title' }, cfg.title));
 
     const stage = html('div', { class: 'stage' });
@@ -259,20 +286,28 @@ export class EnergyFlowCard extends HTMLElement {
 
 
   private buildReplayControls(): HTMLElement {
-    const button = html('button', { class: 'replay-toggle', type: 'button', 'data-replay-toggle': '' }, t('replay', this.language));
-    const time = html('strong', { class: 'replay-time', 'data-replay-time': '' }, t('replay_live', this.language));
+    const label = html('span', { class: 'replay-label' }, t('replay', this.language));
+    const time = html('strong', { class: 'replay-time', 'data-replay-time': '', hidden: '' }, '');
     const slider = html('input', {
       class: 'replay-slider', type: 'range', min: '0', max: '1000', value: '1000', step: '1', disabled: '', 'data-replay-slider': '',
       'aria-label': t('replay_title', this.language),
     }) as HTMLInputElement;
-    const hint = html('span', { class: 'replay-hint', 'data-replay-hint': '' }, t('replay_hint', this.language));
-    const controls = html('div', { class: 'replay-controls' },
-      html('div', { class: 'replay-head' }, button, time), slider, hint,
-    );
-    button.addEventListener('click', () => void this.toggleReplay());
+    const live = html('button', { class: 'replay-live', type: 'button', 'data-replay-live': '', hidden: '' }, t('replay_live', this.language));
+    const status = html('span', { class: 'replay-status', 'data-replay-status': '' }, '');
+    const row = html('div', { class: 'replay-row' }, label, time, slider, live);
+    const controls = html('div', { class: 'replay-controls' }, row, status);
+    live.addEventListener('click', () => this.exitReplay());
     slider.addEventListener('input', () => this.onReplaySlider(Number(slider.value)));
     this.updateReplayControls(controls);
     return controls;
+  }
+
+  private exitReplay(): void {
+    if (!this.replayActive) return;
+    this.replayActive = false;
+    this.replayTimestamp = undefined;
+    this.updateReplayControls();
+    this.update();
   }
 
   private readyReplaySeries(): HistoryPoint[][] {
@@ -289,29 +324,6 @@ export class EnergyFlowCard extends HTMLElement {
     return replayRange(this.readyReplaySeries());
   }
 
-  private async toggleReplay(): Promise<void> {
-    if (this.replayActive) {
-      this.replayActive = false;
-      this.replayTimestamp = undefined;
-      this.updateReplayControls();
-      this.update();
-      return;
-    }
-    const hint = this.replayControls?.querySelector('[data-replay-hint]');
-    if (hint) hint.textContent = t('replay_loading', this.language);
-    if (this.config?.demo) this.loadDemoHistoryBundle();
-    else await this.ensureHistoryBundle();
-    const range = this.replayWindow();
-    if (!range) {
-      if (hint) hint.textContent = t('replay_no_history', this.language);
-      this.updateReplayControls();
-      return;
-    }
-    this.replayActive = true;
-    this.replayTimestamp = range.end;
-    this.updateReplayControls();
-    this.update();
-  }
 
   private onReplaySlider(value: number): void {
     const range = this.replayWindow();
@@ -324,15 +336,11 @@ export class EnergyFlowCard extends HTMLElement {
 
   private updateReplayControls(root: HTMLElement | undefined = this.replayControls): void {
     if (!root) return;
-    const button = root.querySelector('[data-replay-toggle]') as HTMLButtonElement | null;
+    const live = root.querySelector('[data-replay-live]') as HTMLButtonElement | null;
     const slider = root.querySelector('[data-replay-slider]') as HTMLInputElement | null;
-    const time = root.querySelector('[data-replay-time]');
-    const hint = root.querySelector('[data-replay-hint]');
+    const time = root.querySelector('[data-replay-time]') as HTMLElement | null;
+    const status = root.querySelector('[data-replay-status]') as HTMLElement | null;
     const range = this.replayWindow();
-    if (button) {
-      button.textContent = this.replayActive ? t('replay_live', this.language) : t('replay', this.language);
-      button.classList.toggle('active', this.replayActive);
-    }
     if (slider) {
       slider.disabled = !range;
       if (range && this.replayTimestamp !== undefined) {
@@ -340,11 +348,16 @@ export class EnergyFlowCard extends HTMLElement {
       } else if (!this.replayActive) slider.value = '1000';
     }
     if (time) {
+      time.hidden = !this.replayActive || this.replayTimestamp === undefined;
       time.textContent = this.replayActive && this.replayTimestamp !== undefined
         ? new Date(this.replayTimestamp).toLocaleString(this.language || undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' })
-        : t('replay_live', this.language);
+        : '';
     }
-    if (hint) hint.textContent = range ? t('replay_hint', this.language) : t('replay_no_history', this.language);
+    if (live) live.hidden = !this.replayActive;
+    if (status) {
+      status.hidden = !!range;
+      status.textContent = range ? '' : t('replay_no_history', this.language);
+    }
     root.classList.toggle('active', this.replayActive);
   }
 
@@ -452,6 +465,15 @@ export class EnergyFlowCard extends HTMLElement {
     }
   }
 
+  /** Coalesce rapid Home Assistant state updates into a single paint per animation frame. */
+  private scheduleUpdate(): void {
+    if (this.updateFrame !== undefined) return;
+    this.updateFrame = window.requestAnimationFrame(() => {
+      this.updateFrame = undefined;
+      this.update();
+    });
+  }
+
   private syncTimer(): void {
     this.stopTimer();
     if (this.config?.demo && this.isConnected) {
@@ -475,7 +497,9 @@ export class EnergyFlowCard extends HTMLElement {
     this.openNodeId = nodeId;
     this.popup.open(model, this.nodeEls.get(nodeId)?.el);
     void this.ensureHistory(nodeId);
-    if (this.config?.nodes.find((n) => n.id === nodeId)?.type === 'grid') void this.ensureTodayGridBalance();
+    const sourceNode = this.config?.nodes.find((n) => n.id === nodeId);
+    if (sourceNode?.type === 'grid') void this.ensureTodayGridBalance();
+    if (sourceNode?.role === 'home') void this.ensureEnergyStats(this.energyStatsPeriod);
   }
 
   private closePopup(): void {
@@ -576,11 +600,76 @@ export class EnergyFlowCard extends HTMLElement {
       rows,
       history,
       phases,
+      energyStats: node.role === 'home' && !this.replayActive ? this.energyStatsPopupModel() : undefined,
       diagnostics: this.diagnosticRows(node),
       note: node.groupMembers?.length ? `${t('group_total_of', lang)} ${node.groupMembers.length}` : node.role === 'home' ? t(computedHome ? 'home_computed' : 'home_measured', lang) : undefined,
       powerFormat: cfg.powerFormat,
       language: lang,
     };
+  }
+
+  private formatKWh(value: number | null): string {
+    if (value === null || !Number.isFinite(value)) return '—';
+    return `${new Intl.NumberFormat(this.language || undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(value)} kWh`;
+  }
+
+  private formatPct(value: number | null): string {
+    if (value === null || !Number.isFinite(value)) return '—';
+    return `${new Intl.NumberFormat(this.language || undefined, { maximumFractionDigits: 0 }).format(value)} %`;
+  }
+
+  private energyStatsPopupModel(): PopupModel['energyStats'] {
+    const cfg = this.config!;
+    const period = this.energyStatsPeriod;
+    const cached = this.energyStats.get(period);
+    const stats = cached?.value ?? null;
+    const loading = this.energyStatsInFlight.has(period) || (!cached && !cfg.demo);
+    const rows: PopupRow[] = [];
+    if (stats) {
+      rows.push(
+        { label: t('stat_consumption', this.language), value: this.formatKWh(stats.consumptionKWh) },
+        { label: t('stat_import', this.language), value: this.formatKWh(stats.importKWh) },
+        { label: t('stat_export', this.language), value: this.formatKWh(stats.exportKWh) },
+      );
+      if (stats.solarKWh !== null && stats.solarKWh > 0) rows.push({ label: t('stat_solar', this.language), value: this.formatKWh(stats.solarKWh) });
+      if (cfg.pricing.mode !== 'none') {
+        if (stats.importCost !== null) rows.push({ label: t('stat_import_cost', this.language), value: formatCurrency(stats.importCost, cfg.pricing.currency, this.language, 2) });
+        if (stats.exportRevenue !== null) rows.push({ label: t('stat_export_revenue', this.language), value: formatCurrency(stats.exportRevenue, cfg.pricing.currency, this.language, 2) });
+        if (stats.netCost !== null) rows.push({ label: t('stat_net_cost', this.language), value: formatCurrency(stats.netCost, cfg.pricing.currency, this.language, 2) });
+      }
+      if (stats.selfConsumptionPct !== null) rows.push({ label: t('stat_self_consumption', this.language), value: this.formatPct(stats.selfConsumptionPct) });
+      if (stats.selfSufficiencyPct !== null) rows.push({ label: t('stat_self_sufficiency', this.language), value: this.formatPct(stats.selfSufficiencyPct) });
+    }
+    if (!cached && !cfg.demo) queueMicrotask(() => void this.ensureEnergyStats(period));
+    return {
+      selected: period,
+      loading,
+      rows,
+      onSelect: (next) => {
+        this.energyStatsPeriod = next;
+        void this.ensureEnergyStats(next);
+        this.refreshOpenPopup('home');
+      },
+    };
+  }
+
+  private async ensureEnergyStats(period: EnergyStatsPeriod): Promise<void> {
+    const cfg = this.config;
+    if (!cfg) return;
+    const cached = this.energyStats.get(period);
+    if (cached && Date.now() - cached.fetchedAt < HISTORY_TTL_MS) return;
+    const existing = this.energyStatsInFlight.get(period);
+    if (existing) return existing;
+
+    const task = (async () => {
+      const value = cfg.demo ? demoEnergyStats(period) : this._hass ? await fetchEnergyStats(this._hass, cfg, period, cfg.pricing) : null;
+      this.energyStats.set(period, { value, fetchedAt: Date.now() });
+      this.refreshOpenPopup('home');
+    })();
+    this.energyStatsInFlight.set(period, task);
+    try { await task; } finally {
+      if (this.energyStatsInFlight.get(period) === task) this.energyStatsInFlight.delete(period);
+    }
   }
 
   private diagnosticRows(node: EnergyNode): PopupModel['diagnostics'] | undefined {

@@ -348,3 +348,25 @@ describe('Flow backup-raster v0.8.2', () => {
     assert.ok(l.height < 720, `backup-raster is te hoog: ${l.height}`);
   });
 });
+
+
+describe('hiërarchische verbruikers layout v0.14', () => {
+  const nodes = [
+    { name: 'Bureau', type: 'consumer' },
+    { name: 'Computer', type: 'consumer', connected_to: 'Bureau' },
+    { name: 'TV', type: 'consumer', connected_to: 'Bureau' },
+    { name: 'Printer', type: 'consumer', connected_to: 'Bureau' },
+    { name: 'Monitor', type: 'consumer', connected_to: 'Computer' },
+  ];
+  for (const mode of ['flow', 'straight'] as const) {
+    it(`zet kinderen onder hun parent in ${mode}`, () => {
+      const cfg = normalizeConfig({ nodes, layout: { mode } });
+      const l = computeLayout(cfg.nodes, cfg.layout, cfg.connections);
+      const p = (id: string) => l.positions.get(id)!;
+      assert.ok(p('computer').y > p('bureau').y);
+      assert.ok(p('tv').y > p('bureau').y);
+      assert.ok(p('monitor').y > p('computer').y);
+      assert.ok(Math.abs((p('computer').x + p('tv').x + p('printer').x) / 3 - p('bureau').x) < 80);
+    });
+  }
+});

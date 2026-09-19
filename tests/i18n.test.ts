@@ -28,3 +28,10 @@ test('calculated L1 labels are translated', () => {
   assert.equal(t('phase_l1_power_calculated', 'nl-NL'), 'L1 vermogen (berekend)');
   assert.equal(t('phase_l1_power_calculated', 'en-GB'), 'L1 power (calculated)');
 });
+
+
+test('energy statistics labels are translated', () => {
+  assert.equal(t('energy_costs', 'nl-NL'), 'Energie & kosten');
+  assert.equal(t('period_month', 'en-GB'), 'This month');
+  assert.equal(t('stat_net_cost', 'nl-NL'), 'Netto kosten');
+});

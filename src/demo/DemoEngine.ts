@@ -83,7 +83,6 @@ export function demoReadings(nodes: readonly EnergyNode[], t: number): Map<strin
       }
       case 'consumer': {
         watts = 180 + 120 * (0.5 + 0.5 * wave(t, 11, i));
-        consumption += watts;
         break;
       }
       default:
@@ -91,6 +90,28 @@ export function demoReadings(nodes: readonly EnergyNode[], t: number): Map<strin
     }
     if (watts !== null) out.set(node.id, reading(node, watts));
   });
+
+  // Maak hiërarchische verbruikers logisch: een parent met kinderen meet minimaal de som van zijn directe kinderen
+  // plus een kleine eigen restlast. Alleen top-level verbruiker-takken tellen mee in de woningbalans.
+  const byRef = (ref: string): EnergyNode | undefined => {
+    const lower = ref.toLowerCase();
+    return nodes.find((n) => n.id === ref) ?? nodes.find((n) => n.name?.toLowerCase() === lower);
+  };
+  const consumers = nodes.filter((n) => n.type === 'consumer');
+  for (let pass = 0; pass < consumers.length; pass++) {
+    for (const parent of consumers) {
+      const children = consumers.filter((child) => child.config.connected_to && byRef(child.config.connected_to)?.id === parent.id);
+      if (!children.length) continue;
+      const total = children.reduce((sum, child) => sum + Math.max(0, out.get(child.id)?.watts ?? 0), 0);
+      out.set(parent.id, reading(parent, total + 45 + 25 * (0.5 + 0.5 * wave(t, 13, pass))));
+    }
+  }
+  for (const node of consumers) {
+    const ref = node.config.connected_to;
+    const parent = ref ? byRef(ref) : undefined;
+    if (parent?.role === 'consumer' && parent.type !== 'backup') continue;
+    consumption += Math.max(0, out.get(node.id)?.watts ?? 0);
+  }
 
   // Batterij: laadvermogen volgt de afgeleide van de laadtoestand, zodat de cijfers kloppen met elkaar.
   let charge = 0;

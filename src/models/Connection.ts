@@ -70,13 +70,13 @@ export function defaultConnections(nodes: EnergyNode[]): Connection[] {
 }
 
 /**
- * Een gewoon apparaat kan achter een backup hangen (`connected_to`). Een backup zelf hangt altijd aan Home.
- * Geeft undefined als het apparaat aan Home hangt.
+ * Een gewoon apparaat kan achter een backup of een andere verbruiker hangen (`connected_to`).
+ * Geeft undefined als het apparaat direct aan Home hangt.
  */
 export function parentOf(node: EnergyNode, nodes: readonly EnergyNode[]): EnergyNode | undefined {
   const ref = node.config.connected_to?.trim();
   if (!ref || node.role !== 'consumer' || node.type === 'backup') return undefined;
   const lower = ref.toLowerCase();
   const parent = nodes.find((n) => n.id === ref) ?? nodes.find((n) => n.name?.toLowerCase() === lower);
-  return parent?.type === 'backup' ? parent : undefined;
+  return parent && (parent.type === 'backup' || parent.role === 'consumer') ? parent : undefined;
 }

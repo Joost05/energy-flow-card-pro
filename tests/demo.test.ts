@@ -29,7 +29,13 @@ describe('demo-engine', () => {
       const flows = computeFlows(cfg.nodes, cfg.connections, readings, undefined, { ignoreEntities: true });
       const h = computeHomeReading(home, cfg.nodes, cfg.connections, flows);
       let devices = 0;
-      for (const n of cfg.nodes) if (n.role === 'consumer' && n.type !== 'backup') devices += readings.get(n.id)?.watts ?? 0;
+      for (const n of cfg.nodes) {
+        if (n.role !== 'consumer' || n.type === 'backup') continue;
+        const ref = n.config.connected_to;
+        const parent = ref ? cfg.nodes.find((x) => x.id === ref || x.name?.toLowerCase() === ref.toLowerCase()) : undefined;
+        if (parent?.role === 'consumer' && parent.type !== 'backup') continue;
+        devices += readings.get(n.id)?.watts ?? 0;
+      }
       const base = h.watts! - devices;
       assert.ok(base >= 240 - 3 && base <= 520 + 3, `t=${t}: basisverbruik=${base}`);
     }

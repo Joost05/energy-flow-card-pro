@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.15.0
+
+- Added configurable colors for Solar, Grid, Battery, Home, Consumers, EV chargers, Backup, Generator and Producer nodes.
+- Added color pickers to the visual editor under Preview, plus one-click restoration of the default palette.
+- Reworked historical replay into a much smaller single-row scrubber.
+- The **Live** button now appears only while viewing historical data, at the far right of the replay row, and disappears again after returning to Live.
+- Removed the always-visible replay hint/button chrome to give more space back to the energy diagram.
+- Coalesced rapid Home Assistant state updates into one render per animation frame, reducing unnecessary redraw work on busy dashboards.
+- Preserved existing CSS variables and YAML compatibility; cards without `colors:` keep the current default palette.
+- Added regression tests for color configuration.
+- Updated runtime/package version to **0.15.0**.
+
+## 0.14.0
+
+- Added hierarchical consumer branches: a consumer can now be connected behind another consumer, not only behind Home or Backup.
+- Added multi-level chains, for example `Home → Desk smart plug → Computer → Monitor`.
+- The parent power remains the measured branch total while child devices are shown as a breakdown, preventing double counting at Home.
+- Added cycle detection so invalid parent loops such as `A → B → A` are rejected.
+- Updated Flow, Straight and Round layouts to place child consumers relative to their parent.
+- Preserved compact Backup branches with a maximum of three direct children per row in Flow layout.
+- Updated live diagnostics so child consumers are not counted twice in Home unmetered-consumption calculations.
+- Updated Demo mode with a Desk branch and synchronized parent/child example power values.
+- The visual editor now offers Home, Backup and other eligible consumers in **Connected to**, while hiding choices that would create loops.
+- Grouped display rejects parent consumers that still have downstream children, avoiding ambiguous/double-counted group totals.
+- Added regression tests for hierarchy validation, flow direction and nested layouts.
+- Updated runtime/package version to **0.14.0**.
+
+## 0.13.0
+
+- Added a dedicated **Energy & costs** section to the Home popup.
+- Added period switching for **Today**, **This week** and **This month**.
+- Added period totals for Home consumption, Grid import/export and solar production when the required cumulative energy sensors are configured.
+- Added import cost, feed-in revenue and signed net cost for each period.
+- Dynamic Home Assistant price entities use their historical price changes when calculating period costs.
+- Added self-consumption and self-sufficiency percentages when enough energy counters are available.
+- The statistics are cached for five minutes and loaded only when Home details are opened.
+- Demo mode includes sample period statistics for testing without real sensors.
+- Added Dutch and English labels and regression tests for energy statistics.
+- Updated runtime/package version to **0.13.0**.
+
 ## 0.12.1
 
 - Fixed Demo replay showing **Not enough history for replay** even though demo history was available.

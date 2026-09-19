@@ -1,7 +1,7 @@
 {
   "name": "energy-flow-card-pro",
-  "version": "0.12.1",
-  "description": "Energy Flow Card Pro for Home Assistant: live energy flows, history, groups and electricity pricing.",
+  "version": "0.15.0",
+  "description": "Energy Flow Card Pro for Home Assistant: live energy flows, hierarchical consumers, replay, diagnostics, configurable colors and electricity pricing.",
   "private": true,
   "scripts": {
     "build": "esbuild src/index.ts --bundle --minify --format=esm --target=es2021 --outfile=dist/energy-flow-card.js",

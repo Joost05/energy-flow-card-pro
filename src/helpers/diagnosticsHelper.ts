@@ -152,11 +152,17 @@ export function computeDiagnostics(
         }
       }
 
-      // Sum explicitly metered leaf consumers. Backup is excluded because it is an aggregate of its children.
+      // Sum only consumer branches connected directly to Home. Children behind another measured consumer
+      // are a breakdown of that parent and must not be counted twice. Backup is an aggregate and excluded.
+      const directConsumerIds = new Set(
+        connections
+          .filter((c) => c.from === home.id)
+          .map((c) => c.to),
+      );
       let consumerTotal = 0;
       let knownConsumers = 0;
       for (const node of nodes) {
-        if (node.role !== 'consumer' || node.type === 'backup') continue;
+        if (node.role !== 'consumer' || node.type === 'backup' || !directConsumerIds.has(node.id)) continue;
         const reading = readings.get(node.id);
         if (!reading || reading.watts === null) continue;
         knownConsumers++;

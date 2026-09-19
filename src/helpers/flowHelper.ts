@@ -116,14 +116,21 @@ export function computeFlows(
     } else {
       const fromReading = readings.get(from.id);
       const toReading = readings.get(to.id);
-      // Home en een backup voeden allebei de gewone apparaten die eraan hangen.
-      const feeds = (hub: EnergyNode, device: EnergyNode) =>
-        hub.role === 'home' || (hub.type === 'backup' && device.role === 'consumer' && device.type !== 'backup');
-      if (feeds(to, from) && fromReading) {
+      // Home en hiërarchische verbruikers hebben een duidelijke parent → child richting.
+      // Voor parent → child gebruiken we altijd het childvermogen als takvermogen; het parentvermogen blijft
+      // het gemeten totaal op de inkomende tak en wordt daardoor niet dubbel bij Home opgeteld.
+      const isConsumerHub = (node: EnergyNode) => node.type === 'backup' || node.role === 'consumer';
+      const isChild = (node: EnergyNode) => node.role === 'consumer' && node.type !== 'backup';
+      if (to.role === 'home' && fromReading) {
         value = flowToHome(from, fromReading);
-      } else if (feeds(from, to) && toReading) {
+      } else if (from.role === 'home' && toReading) {
         const f = flowToHome(to, toReading);
         value = f === null ? null : negateSafe(f);
+      } else if (isConsumerHub(from) && isChild(to) && toReading) {
+        const f = flowToHome(to, toReading);
+        value = f === null ? null : negateSafe(f);
+      } else if (isConsumerHub(to) && isChild(from) && fromReading) {
+        value = flowToHome(from, fromReading);
       } else if (fromReading && toReading) {
         // Tussen twee nodes zonder Home: schat de stroom als het kleinste van aanbod en vraag.
         const fwdSupply = supply(from, fromReading);

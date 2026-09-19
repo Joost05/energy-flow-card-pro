@@ -52,15 +52,21 @@ export function computeLayout(
   return { ...base, mode };
 }
 
-/** Het apparaat hangt achter deze backup, als de verbindingen dat zeggen. */
-function backupParentOf(node: EnergyNode, byId: ReadonlyMap<string, EnergyNode>, links: readonly Connection[]) {
+/** Bovenliggende node van een verbruiker, voor hiërarchische branches. Home wordt als root behandeld en niet teruggegeven. */
+function consumerParentOf(node: EnergyNode, byId: ReadonlyMap<string, EnergyNode>, links: readonly Connection[]) {
   if (node.role !== 'consumer' || node.type === 'backup') return undefined;
-  for (const c of links) {
-    const otherId = c.from === node.id ? c.to : c.to === node.id ? c.from : null;
-    const other = otherId ? byId.get(otherId) : undefined;
-    if (other?.type === 'backup') return other;
-  }
-  return undefined;
+  const incoming = links.find((c) => c.to === node.id);
+  if (!incoming) return undefined;
+  const parent = byId.get(incoming.from);
+  if (!parent || parent.role === 'home') return undefined;
+  return parent.type === 'backup' || parent.role === 'consumer' ? parent : undefined;
+}
+
+function consumerChildrenOf(node: EnergyNode, byId: ReadonlyMap<string, EnergyNode>, links: readonly Connection[]): EnergyNode[] {
+  return links
+    .filter((c) => c.from === node.id)
+    .map((c) => byId.get(c.to))
+    .filter((child): child is EnergyNode => !!child && child.role === 'consumer' && child.type !== 'backup');
 }
 
 // ----- Rond -----------------------------------------------------------------------------------
@@ -176,20 +182,9 @@ function circleLayout(nodes: readonly EnergyNode[], auto: readonly EnergyNode[],
     }
   }
 
-  // 3. Apparaten achter een backup staan op de buitenring, naast hun backup.
-  const rest: EnergyNode[] = [];
-  for (const device of members.get('device') ?? []) {
-    const parent = backupParentOf(device, byId, links);
-    const parentSlot = parent ? placed.get(parent.id) : undefined;
-    if (parentSlot) {
-      const slot = nearestFree(slotAngle(parentSlot.ring, parentSlot.index), 2);
-      take(device, slot.ring, slot.index);
-    } else {
-      rest.push(device);
-    }
-  }
-
-  // 4. Overige apparaten: diagonalen, dan vrije vaste plekken, dan steeds een ring verder naar buiten.
+  // 3. Zet eerst verbruikers die direct aan Home hangen.
+  const devices = members.get('device') ?? [];
+  const roots = devices.filter((device) => !consumerParentOf(device, byId, links));
   const nextDeviceSlot = (): { ring: number; index: number } => {
     for (const i of [...RING_1_DIAGONALS, ...RING_1_CROSS]) if (!taken.has(key(1, i))) return { ring: 1, index: i };
     for (let ring = 2; ; ring++) {
@@ -200,7 +195,29 @@ function circleLayout(nodes: readonly EnergyNode[], auto: readonly EnergyNode[],
       }
     }
   };
-  for (const device of rest) {
+  for (const device of roots) {
+    const slot = nextDeviceSlot();
+    take(device, slot.ring, slot.index);
+  }
+
+  // 4. Kinderen komen op een buitenste ring in de richting van hun parent. Meerdere niveaus worden iteratief geplaatst.
+  const pending = devices.filter((device) => !placed.has(device.id));
+  let guard = 0;
+  while (pending.length && guard++ < devices.length + 2) {
+    let progressed = false;
+    for (let i = pending.length - 1; i >= 0; i--) {
+      const device = pending[i]!;
+      const parent = consumerParentOf(device, byId, links);
+      const parentSlot = parent ? placed.get(parent.id) : undefined;
+      if (!parentSlot) continue;
+      const slot = nearestFree(slotAngle(parentSlot.ring, parentSlot.index), parentSlot.ring + 1);
+      take(device, slot.ring, slot.index);
+      pending.splice(i, 1);
+      progressed = true;
+    }
+    if (!progressed) break;
+  }
+  for (const device of pending) {
     const slot = nextDeviceSlot();
     take(device, slot.ring, slot.index);
   }
@@ -240,22 +257,14 @@ function circleLayout(nodes: readonly EnergyNode[], auto: readonly EnergyNode[],
  */
 function flowLayout(nodes: readonly EnergyNode[], auto: readonly EnergyNode[], links: readonly Connection[]): Base {
   const byId = new Map(nodes.map((n) => [n.id, n]));
+  const autoIds = new Set(auto.map((n) => n.id));
   const pts = new Map<string, Point>();
   const home = nodes.find((n) => n.role === 'home');
 
   const producers = auto.filter((n) => n.role === 'source');
   const grids = auto.filter((n) => n.type === 'grid');
   const batteries = auto.filter((n) => n.type === 'battery');
-  const backups = auto.filter((n) => n.type === 'backup');
-  const consumers = auto.filter((n) => n.role === 'consumer' && n.type !== 'backup');
-
-  const behind = new Map<string, EnergyNode[]>();
-  const direct: EnergyNode[] = [];
-  for (const device of consumers) {
-    const parent = backupParentOf(device, byId, links);
-    if (parent && backups.includes(parent)) behind.set(parent.id, [...(behind.get(parent.id) ?? []), device]);
-    else direct.push(device);
-  }
+  const consumerNodes = auto.filter((n) => n.role === 'consumer');
 
   const COL = 126;
   const SIDE_NODE_X = 78;
@@ -263,30 +272,48 @@ function flowLayout(nodes: readonly EnergyNode[], auto: readonly EnergyNode[], l
   const SOURCE_TO_HOME = 150;
   const HOME_TO_FIRST_ROW = 150;
   const ROW_GAP = 146;
-  const BACKUP_ROW_GAP = 108;
+  const TREE_ROW_GAP = 116;
   const MAX_ROW_SLOTS = 5;
-  const MAX_BACKUP_COLS = 3;
   const MIN_WIDTH = 520;
   const H_MARGIN = 72;
   const V_MARGIN = 26;
   const LABEL_BOTTOM = 44;
   const LABEL_TOP = 24;
   const SIDE_LABEL = 74;
-  const REGION_GAP = 96;
+  const REGION_GAP = 72;
+  const SIBLING_GAP = 18;
 
-  const directRows: EnergyNode[][] = [];
-  for (let i = 0; i < direct.length; i += MAX_ROW_SLOTS) directRows.push(direct.slice(i, i + MAX_ROW_SLOTS));
-  const directMax = Math.max(0, ...directRows.map((row) => row.length));
-  const directWidth = directMax > 0 ? Math.max(COL, directMax * COL) : 0;
+  const children = new Map<string, EnergyNode[]>();
+  for (const node of consumerNodes) {
+    if (node.type === 'backup') continue;
+    const parent = consumerParentOf(node, byId, links);
+    if (parent && autoIds.has(parent.id)) children.set(parent.id, [...(children.get(parent.id) ?? []), node]);
+  }
 
-  const backupMeta = backups.map((backup) => {
-    const children = behind.get(backup.id) ?? [];
-    const cols = Math.max(1, Math.min(MAX_BACKUP_COLS, children.length || 1));
-    const rows = Math.max(1, Math.ceil(children.length / cols));
-    return { backup, children, cols, rows, width: Math.max(COL, cols * COL) };
-  });
-  const backupWidth = backupMeta.reduce((sum, item) => sum + item.width, 0) + Math.max(0, backupMeta.length - 1) * REGION_GAP;
-  const lowerWidth = directWidth + (directWidth && backupWidth ? REGION_GAP : 0) + backupWidth;
+  const hasParentInAuto = (node: EnergyNode) => {
+    const parent = consumerParentOf(node, byId, links);
+    return !!parent && autoIds.has(parent.id);
+  };
+  const roots = consumerNodes.filter((n) => n.type === 'backup' || !hasParentInAuto(n));
+  const plainRoots = roots.filter((n) => n.type !== 'backup' && (children.get(n.id)?.length ?? 0) === 0);
+  const treeRoots = roots.filter((n) => n.type === 'backup' || (children.get(n.id)?.length ?? 0) > 0);
+
+  const subtreeWidth = (node: EnergyNode, visiting = new Set<string>()): number => {
+    if (visiting.has(node.id)) return COL;
+    const next = new Set(visiting); next.add(node.id);
+    const kids = children.get(node.id) ?? [];
+    if (!kids.length) return COL;
+    if (node.type === 'backup' && kids.length > 3) return 3 * COL;
+    const widths = kids.map((kid) => subtreeWidth(kid, next));
+    return Math.max(COL, widths.reduce((a, b) => a + b, 0) + Math.max(0, kids.length - 1) * SIBLING_GAP);
+  };
+
+  const plainRows: EnergyNode[][] = [];
+  for (let i = 0; i < plainRoots.length; i += MAX_ROW_SLOTS) plainRows.push(plainRoots.slice(i, i + MAX_ROW_SLOTS));
+  const plainWidth = Math.max(0, ...plainRows.map((row) => Math.max(COL, row.length * COL)));
+  const treeWidths = treeRoots.map((root) => subtreeWidth(root));
+  const treesWidth = treeWidths.reduce((sum, w) => sum + w, 0) + Math.max(0, treeWidths.length - 1) * REGION_GAP;
+  const lowerWidth = plainWidth + (plainWidth && treesWidth ? REGION_GAP : 0) + treesWidth;
   const topWidth = Math.max(1, producers.length) * COL;
   let width = Math.max(MIN_WIDTH, lowerWidth + 2 * H_MARGIN, topWidth + 2 * H_MARGIN + 80);
   const centerX = width / 2;
@@ -301,40 +328,58 @@ function flowLayout(nodes: readonly EnergyNode[], auto: readonly EnergyNode[], l
   const firstRowY = homeY + HOME_TO_FIRST_ROW;
   let cursor = (width - lowerWidth) / 2;
 
-  if (directWidth > 0) {
-    const directCenter = cursor + directWidth / 2;
-    directRows.forEach((row, rowIndex) => {
+  if (plainWidth > 0) {
+    const plainCenter = cursor + plainWidth / 2;
+    plainRows.forEach((row, rowIndex) => {
       const y = firstRowY + rowIndex * ROW_GAP;
-      row.forEach((node, i) => pts.set(node.id, { x: directCenter + (i - (row.length - 1) / 2) * COL, y }));
+      row.forEach((node, i) => pts.set(node.id, { x: plainCenter + (i - (row.length - 1) / 2) * COL, y }));
     });
-    cursor += directWidth + (backupWidth ? REGION_GAP : 0);
+    cursor += plainWidth + (treesWidth ? REGION_GAP : 0);
   }
 
-  for (const item of backupMeta) {
-    const clusterCenter = cursor + item.width / 2;
-    pts.set(item.backup.id, { x: clusterCenter, y: firstRowY });
-    item.children.forEach((child, i) => {
-      const row = Math.floor(i / item.cols);
-      const col = i % item.cols;
-      const countThisRow = Math.min(item.cols, item.children.length - row * item.cols);
-      const x = clusterCenter + (col - (countThisRow - 1) / 2) * COL;
-      const y = firstRowY + (row + 1) * BACKUP_ROW_GAP;
-      pts.set(child.id, { x, y });
+  const placeTree = (node: EnergyNode, left: number, treeWidth: number, depth: number, visiting = new Set<string>()) => {
+    if (visiting.has(node.id)) return;
+    const next = new Set(visiting); next.add(node.id);
+    pts.set(node.id, { x: left + treeWidth / 2, y: firstRowY + depth * TREE_ROW_GAP });
+    const kids = children.get(node.id) ?? [];
+    if (!kids.length) return;
+    if (node.type === 'backup' && kids.length > 3) {
+      const cols = 3;
+      kids.forEach((kid, i) => {
+        const row = Math.floor(i / cols);
+        const col = i % cols;
+        const countThisRow = Math.min(cols, kids.length - row * cols);
+        const childWidth = subtreeWidth(kid, next);
+        const center = left + treeWidth / 2 + (col - (countThisRow - 1) / 2) * COL;
+        placeTree(kid, center - childWidth / 2, childWidth, depth + 1 + row, next);
+      });
+      return;
+    }
+    const widths = kids.map((kid) => subtreeWidth(kid, next));
+    const total = widths.reduce((a, b) => a + b, 0) + Math.max(0, kids.length - 1) * SIBLING_GAP;
+    let childLeft = left + (treeWidth - total) / 2;
+    kids.forEach((kid, i) => {
+      placeTree(kid, childLeft, widths[i]!, depth + 1, next);
+      childLeft += widths[i]! + SIBLING_GAP;
     });
-    cursor += item.width + REGION_GAP;
-  }
+  };
+  treeRoots.forEach((root, i) => {
+    const w = treeWidths[i]!;
+    placeTree(root, cursor, w, 0);
+    cursor += w + REGION_GAP;
+  });
 
   let minX = Infinity;
   let maxX = -Infinity;
   let minY = Infinity;
   let maxY = -Infinity;
-  for (const [id, p] of pts) {
+  for (const [id, point] of pts) {
     const node = byId.get(id);
     const radius = node?.role === 'home' ? HOME_RADIUS : NODE_RADIUS;
-    minX = Math.min(minX, p.x - radius);
-    maxX = Math.max(maxX, p.x + radius + (node?.role === 'home' || node?.type === 'backup' ? SIDE_LABEL : 0));
-    minY = Math.min(minY, p.y - radius - LABEL_TOP);
-    maxY = Math.max(maxY, p.y + radius + LABEL_BOTTOM);
+    minX = Math.min(minX, point.x - radius);
+    maxX = Math.max(maxX, point.x + radius + (node?.role === 'home' || node?.type === 'backup' ? SIDE_LABEL : 0));
+    minY = Math.min(minY, point.y - radius - LABEL_TOP);
+    maxY = Math.max(maxY, point.y + radius + LABEL_BOTTOM);
   }
   if (!Number.isFinite(minX)) return { width: MIN_WIDTH, height: 220, positions: new Map() };
 
@@ -347,9 +392,8 @@ function flowLayout(nodes: readonly EnergyNode[], auto: readonly EnergyNode[], l
   const dy = V_MARGIN - minY;
 
   const positions = new Map<string, Point>();
-  for (const [id, p] of pts) positions.set(id, { x: p.x + dx, y: p.y + dy });
-  width = fittedWidth;
-  return { width: Math.round(width), height: Math.round(fittedHeight), positions };
+  for (const [id, point] of pts) positions.set(id, { x: point.x + dx, y: point.y + dy });
+  return { width: Math.round(fittedWidth), height: Math.round(fittedHeight), positions };
 }
 
 // ----- Recht ----------------------------------------------------------------------------------
@@ -398,28 +442,42 @@ function straightLayout(nodes: readonly EnergyNode[], auto: readonly EnergyNode[
     row(near, -STRAIGHT_ROW_GAP);
   }
 
-  // Onder Home: gewone apparaten, dan de backups; onder elke backup de apparaten die erachter hangen.
-  const devices = auto.filter((n) => n.role === 'consumer' && n.type !== 'backup');
-  const backups = auto.filter((n) => n.type === 'backup');
-  const behind = new Map<string, EnergyNode[]>();
-  const direct: EnergyNode[] = [];
-  for (const device of devices) {
-    const parent = backupParentOf(device, byId, links);
-    if (parent && backups.includes(parent)) behind.set(parent.id, [...(behind.get(parent.id) ?? []), device]);
-    else direct.push(device);
+  // Onder Home: verbruikers vormen een boom. Een gemeten parent blijft één tak voor Home;
+  // de kinderen staan eronder als uitsplitsing en worden dus niet dubbel op de hoofdflow aangesloten.
+  const consumerNodes = auto.filter((n) => n.role === 'consumer');
+  const autoIds = new Set(auto.map((n) => n.id));
+  const children = new Map<string, EnergyNode[]>();
+  for (const device of consumerNodes) {
+    if (device.type === 'backup') continue;
+    const parent = consumerParentOf(device, byId, links);
+    if (parent && autoIds.has(parent.id)) children.set(parent.id, [...(children.get(parent.id) ?? []), device]);
   }
-  const items = [...direct, ...backups];
-  const widthOf = (n: EnergyNode) => Math.max(1, behind.get(n.id)?.length ?? 1);
-  const total = items.reduce((sum, n) => sum + widthOf(n), 0);
-  let cursor = 0;
-  for (const item of items) {
-    const w = widthOf(item);
-    pts.set(item.id, { x: (cursor + (w - 1) / 2 - (total - 1) / 2) * COL, y: STRAIGHT_ROW_GAP });
-    (behind.get(item.id) ?? []).forEach((child, i) =>
-      pts.set(child.id, { x: (cursor + i - (total - 1) / 2) * COL, y: 2 * STRAIGHT_ROW_GAP }),
-    );
-    cursor += w;
-  }
+  const roots = consumerNodes.filter((node) => node.type === 'backup' || !consumerParentOf(node, byId, links) || !autoIds.has(consumerParentOf(node, byId, links)!.id));
+  const widthOf = (node: EnergyNode, visiting = new Set<string>()): number => {
+    if (visiting.has(node.id)) return 1;
+    const next = new Set(visiting); next.add(node.id);
+    const kids = children.get(node.id) ?? [];
+    if (!kids.length) return 1;
+    return Math.max(1, kids.reduce((sum, child) => sum + widthOf(child, next), 0));
+  };
+  const widths = roots.map((root) => widthOf(root));
+  const total = widths.reduce((sum, value) => sum + value, 0);
+  const place = (node: EnergyNode, start: number, width: number, depth: number, visiting = new Set<string>()) => {
+    if (visiting.has(node.id)) return;
+    const next = new Set(visiting); next.add(node.id);
+    pts.set(node.id, { x: (start + (width - 1) / 2 - (total - 1) / 2) * COL, y: depth * STRAIGHT_ROW_GAP });
+    let cursor = start;
+    for (const child of children.get(node.id) ?? []) {
+      const childWidth = widthOf(child, next);
+      place(child, cursor, childWidth, depth + 1, next);
+      cursor += childWidth;
+    }
+  };
+  let lowerCursor = 0;
+  roots.forEach((root, i) => {
+    place(root, lowerCursor, widths[i]!, 1);
+    lowerCursor += widths[i]!;
+  });
 
   // Kaart om alles heen, niet te smal en niet te breed.
   let minX = Infinity;
