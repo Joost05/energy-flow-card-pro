@@ -17,6 +17,28 @@ function childConnections(id: string, nodesById: ReadonlyMap<string, EnergyNode>
   });
 }
 
+/** All consumer descendants below a node, in breadth-first order. */
+export function descendantConsumerIds(id: string, nodes: readonly EnergyNode[], connections: readonly Connection[]): string[] {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const out: string[] = [];
+  const seen = new Set<string>([id]);
+  const queue = [id];
+  while (queue.length) {
+    const current = queue.shift()!;
+    for (const conn of childConnections(current, byId, connections)) {
+      if (seen.has(conn.to)) continue;
+      seen.add(conn.to);
+      out.push(conn.to);
+      queue.push(conn.to);
+    }
+  }
+  return out;
+}
+
+export function countFocusableDescendants(id: string, nodes: readonly EnergyNode[], connections: readonly Connection[]): number {
+  return descendantConsumerIds(id, nodes, connections).length;
+}
+
 export function hasFocusableChildren(id: string, nodes: readonly EnergyNode[], connections: readonly Connection[]): boolean {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   return childConnections(id, byId, connections).length > 0;
@@ -24,8 +46,8 @@ export function hasFocusableChildren(id: string, nodes: readonly EnergyNode[], c
 
 /**
  * Compact mobile graph: Home shows only its direct neighbours. Focusing a consumer/backup
- * shows that node as the centre plus only its direct children. This keeps labels readable
- * without changing the underlying full graph used for readings/history/replay.
+ * shows that node as the centre plus its complete descendant subtree. This keeps the main
+ * mobile overview readable while still exposing the whole branch after one tap.
  */
 export function buildMobileFocusGraph(
   nodes: readonly EnergyNode[],
@@ -44,7 +66,11 @@ export function buildMobileFocusGraph(
   if (focus.id === home.id) {
     visibleConnections = connections.filter((c) => c.from === home.id || c.to === home.id);
   } else {
-    visibleConnections = childConnections(focus.id, byId, connections);
+    const descendants = new Set(descendantConsumerIds(focus.id, nodes, connections));
+    visibleConnections = connections.filter((c) =>
+      (c.from === focus.id && descendants.has(c.to)) ||
+      (descendants.has(c.from) && descendants.has(c.to)),
+    );
     parentId = connections.find((c) => c.to === focus.id)?.from;
   }
 

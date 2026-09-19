@@ -124,6 +124,8 @@ ha-card.fallback {
 .diagnostic-badge circle { fill: var(--warning-color, #f9a825); stroke: var(--card-background-color, #fff); stroke-width: 1.5; }
 .diagnostic-badge[data-severity="error"] circle { fill: var(--error-color, #db4437); }
 .diagnostic-badge text { fill: #fff; font-size: 12px; font-weight: 800; stroke: none; }
+.child-badge circle { fill: color-mix(in srgb, var(--c) 82%, var(--card-background-color, #fff)); stroke: var(--card-background-color, #fff); stroke-width: 1.5; }
+.child-badge text { fill: #fff; font-size: 9px; font-weight: 800; stroke: none; }
 
 /* Detailweergave */
 .popup {

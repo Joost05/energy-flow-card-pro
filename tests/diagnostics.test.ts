@@ -79,3 +79,28 @@ describe('diagnostics', () => {
     assert.equal(report.byNode.get('home')?.some((i) => i.code === 'balance_mismatch'), true);
   });
 });
+
+it('propagates a child diagnostic warning to its consumer ancestors', () => {
+  const cfg = normalizeConfig({
+    nodes: [
+      { name: 'Bureau', type: 'consumer', power_entity: 'sensor.desk' },
+      { name: 'Stekkerdoos', type: 'consumer', power_entity: 'sensor.strip', connected_to: 'bureau' },
+      { name: 'PC', type: 'consumer', power_entity: 'sensor.pc', connected_to: 'stekkerdoos' },
+    ],
+  });
+  const hass: Hass = { states: {
+    'sensor.desk': entity('300'),
+    'sensor.strip': entity('250'),
+    'sensor.pc': entity('unavailable'),
+  } };
+  const readings = new Map<string, NodeReading>();
+  for (const n of cfg.nodes) if (n.role !== 'home') readings.set(n.id, readNode(n, hass));
+  const flows = computeFlows(cfg.nodes, cfg.connections, readings, hass);
+  const home = cfg.nodes.find((n) => n.role === 'home')!;
+  readings.set(home.id, { status: EntityStatus.Valid, watts: 300, charging: false });
+  const report = computeDiagnostics(cfg.nodes, cfg.connections, readings, flows, hass);
+  assert.equal(report.byNode.get('pc')?.some((i) => i.code === 'sensor_unavailable'), true);
+  assert.deepEqual(report.byNode.get('stekkerdoos')?.find((i) => i.code === 'descendant_issue')?.descendantIds, ['pc']);
+  assert.deepEqual(report.byNode.get('bureau')?.find((i) => i.code === 'descendant_issue')?.descendantIds, ['pc']);
+  assert.deepEqual(report.byNode.get('home')?.find((i) => i.code === 'descendant_issue')?.descendantIds, ['pc']);
+});

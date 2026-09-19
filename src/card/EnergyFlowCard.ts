@@ -10,7 +10,7 @@ import {
 } from '../helpers/flowHelper';
 import { HistoryPoint, bucketize, fetchHistoryBatch } from '../helpers/historyHelper';
 import { nearestHistoryPoint, replayRange } from '../helpers/replayHelper';
-import { buildMobileFocusGraph, hasFocusableChildren } from '../helpers/mobileFocusHelper';
+import { buildMobileFocusGraph, countFocusableDescendants, hasFocusableChildren } from '../helpers/mobileFocusHelper';
 import { hassLanguage, t } from '../helpers/i18n';
 import { deriveL1History, deriveL1Power } from '../helpers/phaseHelper';
 import { currentGridRate, fetchTodayGridFinancials, formatCurrency, formatPrice, readPrices } from '../helpers/pricingHelper';
@@ -517,6 +517,7 @@ export class EnergyFlowCard extends HTMLElement {
           ? node.groupMembers.flatMap((id) => this.computed?.diagnostics.byNode.get(id) ?? [])
           : this.computed.diagnostics.byNode.get(node.id);
         view.diagnostic = highestSeverity(issues);
+        view.childCount = countFocusableDescendants(node.id, (this.displayNodes.length ? this.displayNodes : cfg.nodes), (this.displayConnections.length ? this.displayConnections : cfg.connections));
         this.nodeEls.get(node.id)?.update(view);
       }
     }
@@ -745,11 +746,16 @@ export class EnergyFlowCard extends HTMLElement {
       : [...(report.byNode.get(node.id) ?? [])];
     const rows: PopupRow[] = issues.map((item) => ({
       label: t(item.labelKey, lang),
-      value: item.minutes !== undefined
-        ? `${Math.round(item.minutes)} ${t('minutes_short', lang)}`
-        : item.watts !== undefined
-          ? `${item.watts < 0 ? '−' : ''}${formatPower(item.watts, this.config!.powerFormat)}`
-          : item.detail ?? t('diag_attention', lang),
+      value: item.descendantIds?.length
+        ? (() => {
+            const names = item.descendantIds.map((id) => (this.displayNodes.length ? this.displayNodes : this.config!.nodes).find((n) => n.id === id)?.name ?? id);
+            return names.length <= 3 ? names.join(', ') : `${names.slice(0, 3).join(', ')} +${names.length - 3}`;
+          })()
+        : item.minutes !== undefined
+          ? `${Math.round(item.minutes)} ${t('minutes_short', lang)}`
+          : item.watts !== undefined
+            ? `${item.watts < 0 ? '−' : ''}${formatPower(item.watts, this.config!.powerFormat)}`
+            : item.detail ?? t('diag_attention', lang),
     }));
 
     if (node.role === 'home' && report.unmeteredConsumptionWatts !== null) {

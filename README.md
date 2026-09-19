@@ -10,6 +10,9 @@ A custom Home Assistant Lovelace card for advanced live energy flows, device-lev
 - Automatic multi-row wrapping for larger installations
 - Compact backup-device grids
 - Hierarchical consumer branches (for example Desk smart plug → PC / TV / console / 3D printer)
+- Parent nodes show a descendant-count badge so hidden branch depth is visible at a glance
+- Mobile branch focus expands the complete subtree, rather than only one child level
+- Diagnostic warnings propagate up consumer branches so problems deeper in a tree remain visible from the main card
 - Optional device groups with summed live power or individual display
 - Group detail popups with member values and 24-hour history
 - Icon dropdown with common MDI presets plus a custom `mdi:` option
@@ -29,6 +32,7 @@ A custom Home Assistant Lovelace card for advanced live energy flows, device-lev
 
 ## Version history
 
+- **0.18.0** — Makes deep consumer trees easier to understand: descendant-count badges, full subtree focus on mobile, and diagnostic warnings propagated to parent nodes.
 - **0.17.0** — Aligns the technical identifiers with the public name: `custom:energy-flow-card-pro` and `energy-flow-card-pro.js`. This is a one-time breaking rename before 1.0.
 - **0.16.0** — Adds mobile focus navigation for large hierarchies, reliable touch-drag graph inspection, and a more compact replay control.
 

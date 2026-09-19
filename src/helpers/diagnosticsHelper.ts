@@ -17,6 +17,8 @@ export interface DiagnosticItem {
   watts?: number;
   /** Optional age in minutes for stale entities. */
   minutes?: number;
+  /** Source node ids when this item summarizes issues deeper in a consumer branch. */
+  descendantIds?: string[];
 }
 
 export interface DiagnosticReport {
@@ -56,6 +58,46 @@ function entityAgeMinutes(hass: Hass, entityId: string, now: number): number | n
   const ms = Date.parse(stamp);
   if (!Number.isFinite(ms)) return null;
   return Math.max(0, (now - ms) / 60_000);
+}
+
+
+function propagateDescendantIssues(
+  nodes: readonly EnergyNode[],
+  connections: readonly Connection[],
+  byNode: Map<string, DiagnosticItem[]>,
+): void {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const sources = [...byNode.entries()]
+    .filter(([, items]) => items.some((item) => item.severity === 'warning' || item.severity === 'error'))
+    .map(([id]) => id);
+  const affected = new Map<string, Set<string>>();
+
+  for (const sourceId of sources) {
+    let currentId = sourceId;
+    const seen = new Set<string>([sourceId]);
+    while (true) {
+      const incoming = connections.find((c) => c.to === currentId);
+      if (!incoming || seen.has(incoming.from)) break;
+      seen.add(incoming.from);
+      const parent = byId.get(incoming.from);
+      if (!parent || (parent.role !== 'consumer' && parent.role !== 'home' && parent.type !== 'backup')) break;
+      const set = affected.get(parent.id) ?? new Set<string>();
+      set.add(sourceId);
+      affected.set(parent.id, set);
+      currentId = parent.id;
+    }
+  }
+
+  for (const [ancestorId, sourceIds] of affected) {
+    const ids = [...sourceIds].filter((id) => id !== ancestorId);
+    if (!ids.length) continue;
+    add(byNode, ancestorId, {
+      code: 'descendant_issue',
+      severity: 'warning',
+      labelKey: 'diag_descendant_issue',
+      descendantIds: ids,
+    });
+  }
 }
 
 function sourceBalanceAtHome(
@@ -182,6 +224,7 @@ export function computeDiagnostics(
     }
   }
 
+  propagateDescendantIssues(nodes, connections, byNode);
   return { byNode, balanceDifferenceWatts, unmeteredConsumptionWatts };
 }
 

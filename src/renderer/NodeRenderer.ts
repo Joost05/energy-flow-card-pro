@@ -21,6 +21,8 @@ export interface NodeView {
   level?: number;
   /** Alleen voor echte diagnoseproblemen; info-items krijgen geen badge. */
   diagnostic?: 'info' | 'warning' | 'error';
+  /** Number of consumer descendants behind this node. */
+  childCount?: number;
 }
 
 export interface DescribeContext {
@@ -190,10 +192,13 @@ export function createNodeElement(
   badge.append(svg('circle', { r: 11 }), svg('path', { d: BOLT, class: 'bolt' }));
   const diagnostic = svg('g', { class: 'diagnostic-badge', transform: `translate(${-radius * 0.72} ${-radius * 0.72})`, visibility: 'hidden' });
   diagnostic.append(svg('circle', { r: 9 }), svg('text', { x: 0, y: 4, 'text-anchor': 'middle' }, '!'));
+  const childBadge = svg('g', { class: 'child-badge', transform: `translate(${radius * 0.72} ${radius * 0.72})`, visibility: 'hidden' });
+  const childBadgeText = svg('text', { x: 0, y: 3.5, 'text-anchor': 'middle' });
+  childBadge.append(svg('circle', { r: 9 }), childBadgeText);
 
   if (isBattery) g.append(socText);
   if (!hasIcon) g.append(nameIn);
-  g.append(value, badge, diagnostic);
+  g.append(value, badge, diagnostic, childBadge);
   if (hasIcon) g.append(label, sub);
   else g.append(subNoIcon);
 
@@ -218,6 +223,13 @@ export function createNodeElement(
     setText(socText, view.socText ?? '');
     setText(sub, view.subtitle ?? '');
     setText(subNoIcon, view.subtitle ?? '');
+    if ((view.childCount ?? 0) > 0) {
+      childBadge.setAttribute('visibility', 'visible');
+      setText(childBadgeText, view.childCount! > 9 ? '9+' : String(view.childCount));
+    } else {
+      childBadge.setAttribute('visibility', 'hidden');
+      setText(childBadgeText, '');
+    }
     if (view.diagnostic === 'warning' || view.diagnostic === 'error') {
       diagnostic.setAttribute('visibility', 'visible');
       diagnostic.setAttribute('data-severity', view.diagnostic);

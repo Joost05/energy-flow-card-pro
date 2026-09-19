@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.18.0] - 2026-09-20
+
+### Added
+- Added a descendant-count badge to parent consumer nodes so the main card shows when more devices are hidden behind a branch.
+- Added recursive diagnostic propagation: warnings/errors on child devices now surface as a branch warning on their consumer ancestors and Home.
+- Parent diagnostic popups list the affected descendant devices.
+
+### Changed
+- Mobile focus now opens the complete descendant subtree of a branch instead of only its direct children.
+- Nested parents inside that focused tree can still be tapped to focus further, while leaf devices keep opening their normal detail popup.
+- Updated runtime/package version to **0.18.0**.
+
 ## [0.17.0] - 2026-09-20
 
 ### Changed

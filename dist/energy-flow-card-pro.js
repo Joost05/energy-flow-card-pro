@@ -1,31 +1,32 @@
+// Energy Flow Card Pro v0.18.0
 (()=>{
-const __mods=Object.create(null),__cache=Object.create(null);
-__mods["src/card/EnergyFlowCard"]=(module,exports,__req)=>{
+const __mods = Object.create(null);
+__mods["card/EnergyFlowCard.js"] = function(module, exports, require){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ConfigError = exports.EnergyFlowCard = void 0;
-const CardConfig_1 = __req("src/config/CardConfig");
+const CardConfig_1 = require("../config/CardConfig");
 Object.defineProperty(exports, "ConfigError", { enumerable: true, get: function () { return CardConfig_1.ConfigError; } });
-const DemoEngine_1 = __req("src/demo/DemoEngine");
-const diagnosticsHelper_1 = __req("src/helpers/diagnosticsHelper");
-const flowHelper_1 = __req("src/helpers/flowHelper");
-const historyHelper_1 = __req("src/helpers/historyHelper");
-const replayHelper_1 = __req("src/helpers/replayHelper");
-const mobileFocusHelper_1 = __req("src/helpers/mobileFocusHelper");
-const i18n_1 = __req("src/helpers/i18n");
-const phaseHelper_1 = __req("src/helpers/phaseHelper");
-const pricingHelper_1 = __req("src/helpers/pricingHelper");
-const energyStatsHelper_1 = __req("src/helpers/energyStatsHelper");
-const groupHelper_1 = __req("src/helpers/groupHelper");
-const stateHelper_1 = __req("src/helpers/stateHelper");
-const AutoLayout_1 = __req("src/layout/AutoLayout");
-const Node_1 = __req("src/models/Node");
-const ConnectionRenderer_1 = __req("src/renderer/ConnectionRenderer");
-const NodeRenderer_1 = __req("src/renderer/NodeRenderer");
-const PopupRenderer_1 = __req("src/renderer/PopupRenderer");
-const dom_1 = __req("src/renderer/dom");
-const EntityStatus_1 = __req("src/types/EntityStatus");
-const styles_1 = __req("src/card/styles");
+const DemoEngine_1 = require("../demo/DemoEngine");
+const diagnosticsHelper_1 = require("../helpers/diagnosticsHelper");
+const flowHelper_1 = require("../helpers/flowHelper");
+const historyHelper_1 = require("../helpers/historyHelper");
+const replayHelper_1 = require("../helpers/replayHelper");
+const mobileFocusHelper_1 = require("../helpers/mobileFocusHelper");
+const i18n_1 = require("../helpers/i18n");
+const phaseHelper_1 = require("../helpers/phaseHelper");
+const pricingHelper_1 = require("../helpers/pricingHelper");
+const energyStatsHelper_1 = require("../helpers/energyStatsHelper");
+const groupHelper_1 = require("../helpers/groupHelper");
+const stateHelper_1 = require("../helpers/stateHelper");
+const AutoLayout_1 = require("../layout/AutoLayout");
+const Node_1 = require("../models/Node");
+const ConnectionRenderer_1 = require("../renderer/ConnectionRenderer");
+const NodeRenderer_1 = require("../renderer/NodeRenderer");
+const PopupRenderer_1 = require("../renderer/PopupRenderer");
+const dom_1 = require("../renderer/dom");
+const EntityStatus_1 = require("../types/EntityStatus");
+const styles_1 = require("./styles");
 const HISTORY_HOURS = 24;
 const HISTORY_TTL_MS = 5 * 60_000;
 const HISTORY_BUCKETS = 96;
@@ -465,6 +466,7 @@ class EnergyFlowCard extends HTMLElement {
                     ? node.groupMembers.flatMap((id) => this.computed?.diagnostics.byNode.get(id) ?? [])
                     : this.computed.diagnostics.byNode.get(node.id);
                 view.diagnostic = (0, diagnosticsHelper_1.highestSeverity)(issues);
+                view.childCount = (0, mobileFocusHelper_1.countFocusableDescendants)(node.id, (this.displayNodes.length ? this.displayNodes : cfg.nodes), (this.displayConnections.length ? this.displayConnections : cfg.connections));
                 this.nodeEls.get(node.id)?.update(view);
             }
         }
@@ -697,11 +699,16 @@ class EnergyFlowCard extends HTMLElement {
             : [...(report.byNode.get(node.id) ?? [])];
         const rows = issues.map((item) => ({
             label: (0, i18n_1.t)(item.labelKey, lang),
-            value: item.minutes !== undefined
-                ? `${Math.round(item.minutes)} ${(0, i18n_1.t)('minutes_short', lang)}`
-                : item.watts !== undefined
-                    ? `${item.watts < 0 ? '−' : ''}${(0, stateHelper_1.formatPower)(item.watts, this.config.powerFormat)}`
-                    : item.detail ?? (0, i18n_1.t)('diag_attention', lang),
+            value: item.descendantIds?.length
+                ? (() => {
+                    const names = item.descendantIds.map((id) => (this.displayNodes.length ? this.displayNodes : this.config.nodes).find((n) => n.id === id)?.name ?? id);
+                    return names.length <= 3 ? names.join(', ') : `${names.slice(0, 3).join(', ')} +${names.length - 3}`;
+                })()
+                : item.minutes !== undefined
+                    ? `${Math.round(item.minutes)} ${(0, i18n_1.t)('minutes_short', lang)}`
+                    : item.watts !== undefined
+                        ? `${item.watts < 0 ? '−' : ''}${(0, stateHelper_1.formatPower)(item.watts, this.config.powerFormat)}`
+                        : item.detail ?? (0, i18n_1.t)('diag_attention', lang),
         }));
         if (node.role === 'home' && report.unmeteredConsumptionWatts !== null) {
             const watts = report.unmeteredConsumptionWatts;
@@ -1153,7 +1160,7 @@ function labelPositionFor(node, y, homeY, straight) {
 }
 
 };
-__mods["src/card/styles"]=(module,exports,__req)=>{
+__mods["card/styles.js"] = function(module, exports, require){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.styles = void 0;
@@ -1283,6 +1290,8 @@ ha-card.fallback {
 .diagnostic-badge circle { fill: var(--warning-color, #f9a825); stroke: var(--card-background-color, #fff); stroke-width: 1.5; }
 .diagnostic-badge[data-severity="error"] circle { fill: var(--error-color, #db4437); }
 .diagnostic-badge text { fill: #fff; font-size: 12px; font-weight: 800; stroke: none; }
+.child-badge circle { fill: color-mix(in srgb, var(--c) 82%, var(--card-background-color, #fff)); stroke: var(--card-background-color, #fff); stroke-width: 1.5; }
+.child-badge text { fill: #fff; font-size: 9px; font-weight: 800; stroke: none; }
 
 /* Detailweergave */
 .popup {
@@ -1416,14 +1425,14 @@ ha-card.fallback {
 `;
 
 };
-__mods["src/config/CardConfig"]=(module,exports,__req)=>{
+__mods["config/CardConfig.js"] = function(module, exports, require){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ConfigError = void 0;
 exports.normalizeConfig = normalizeConfig;
-const Connection_1 = __req("src/models/Connection");
-const Node_1 = __req("src/models/Node");
-const NodeType_1 = __req("src/types/NodeType");
+const Connection_1 = require("../models/Connection");
+const Node_1 = require("../models/Node");
+const NodeType_1 = require("../types/NodeType");
 class ConfigError extends Error {
     constructor(message) {
         super(message);
@@ -1761,12 +1770,12 @@ function parseLayout(raw) {
 }
 
 };
-__mods["src/demo/DemoEngine"]=(module,exports,__req)=>{
+__mods["demo/DemoEngine.js"] = function(module, exports, require){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.demoReadings = demoReadings;
-const flowHelper_1 = __req("src/helpers/flowHelper");
-const EntityStatus_1 = __req("src/types/EntityStatus");
+const flowHelper_1 = require("../helpers/flowHelper");
+const EntityStatus_1 = require("../types/EntityStatus");
 const DAY_SECONDS = 120; // één "dag" duurt twee minuten, zodat je alles snel ziet gebeuren
 const BATTERY_SECONDS = 150;
 const wave = (t, period, phase = 0) => Math.sin((2 * Math.PI * t) / period + phase);
@@ -1888,15 +1897,15 @@ function demoReadings(nodes, t) {
 }
 
 };
-__mods["src/editor/EnergyFlowCardEditor"]=(module,exports,__req)=>{
+__mods["editor/EnergyFlowCardEditor.js"] = function(module, exports, require){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EnergyFlowCardEditor = void 0;
-const CardConfig_1 = __req("src/config/CardConfig");
-const i18n_1 = __req("src/helpers/i18n");
-const Node_1 = __req("src/models/Node");
-const dom_1 = __req("src/renderer/dom");
-const NodeType_1 = __req("src/types/NodeType");
+const CardConfig_1 = require("../config/CardConfig");
+const i18n_1 = require("../helpers/i18n");
+const Node_1 = require("../models/Node");
+const dom_1 = require("../renderer/dom");
+const NodeType_1 = require("../types/NodeType");
 const SELECTABLE_TYPES = NodeType_1.NODE_TYPES.filter((type) => type !== 'home');
 const POWER_FIELDS = new Set(['power_entity', 'charge_power_entity', 'discharge_power_entity', 'production_entity', 'phase_l1_power_entity', 'phase_l2_power_entity', 'phase_l3_power_entity']);
 const ICON_PRESETS = [
@@ -2778,7 +2787,7 @@ class EnergyFlowCardEditor extends HTMLElement {
 exports.EnergyFlowCardEditor = EnergyFlowCardEditor;
 
 };
-__mods["src/helpers/diagnosticsHelper"]=(module,exports,__req)=>{
+__mods["helpers/diagnosticsHelper.js"] = function(module, exports, require){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.computeDiagnostics = computeDiagnostics;
@@ -2808,6 +2817,41 @@ function entityAgeMinutes(hass, entityId, now) {
     if (!Number.isFinite(ms))
         return null;
     return Math.max(0, (now - ms) / 60_000);
+}
+function propagateDescendantIssues(nodes, connections, byNode) {
+    const byId = new Map(nodes.map((node) => [node.id, node]));
+    const sources = [...byNode.entries()]
+        .filter(([, items]) => items.some((item) => item.severity === 'warning' || item.severity === 'error'))
+        .map(([id]) => id);
+    const affected = new Map();
+    for (const sourceId of sources) {
+        let currentId = sourceId;
+        const seen = new Set([sourceId]);
+        while (true) {
+            const incoming = connections.find((c) => c.to === currentId);
+            if (!incoming || seen.has(incoming.from))
+                break;
+            seen.add(incoming.from);
+            const parent = byId.get(incoming.from);
+            if (!parent || (parent.role !== 'consumer' && parent.role !== 'home' && parent.type !== 'backup'))
+                break;
+            const set = affected.get(parent.id) ?? new Set();
+            set.add(sourceId);
+            affected.set(parent.id, set);
+            currentId = parent.id;
+        }
+    }
+    for (const [ancestorId, sourceIds] of affected) {
+        const ids = [...sourceIds].filter((id) => id !== ancestorId);
+        if (!ids.length)
+            continue;
+        add(byNode, ancestorId, {
+            code: 'descendant_issue',
+            severity: 'warning',
+            labelKey: 'diag_descendant_issue',
+            descendantIds: ids,
+        });
+    }
 }
 function sourceBalanceAtHome(homeId, nodes, connections, flows) {
     const byId = new Map(nodes.map((node) => [node.id, node]));
@@ -2917,6 +2961,7 @@ function computeDiagnostics(nodes, connections, readings, sourceFlows, hass, opt
             }
         }
     }
+    propagateDescendantIssues(nodes, connections, byNode);
     return { byNode, balanceDifferenceWatts, unmeteredConsumptionWatts };
 }
 function highestSeverity(items) {
@@ -2930,12 +2975,12 @@ function highestSeverity(items) {
 }
 
 };
-__mods["src/helpers/energyStatsHelper"]=(module,exports,__req)=>{
+__mods["helpers/energyStatsHelper.js"] = function(module, exports, require){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.fetchEnergyStats = fetchEnergyStats;
 exports.demoEnergyStats = demoEnergyStats;
-const pricingHelper_1 = __req("src/helpers/pricingHelper");
+const pricingHelper_1 = require("./pricingHelper");
 function energyToKWh(value, unit) {
     const u = typeof unit === 'string' ? unit.trim().toLowerCase() : '';
     if (u === 'wh')
@@ -3130,7 +3175,7 @@ function demoEnergyStats(period, now = Date.now()) {
 }
 
 };
-__mods["src/helpers/flowHelper"]=(module,exports,__req)=>{
+__mods["helpers/flowHelper.js"] = function(module, exports, require){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.flowToHome = flowToHome;
@@ -3139,8 +3184,8 @@ exports.readNode = readNode;
 exports.computeFlows = computeFlows;
 exports.computeHomeReading = computeHomeReading;
 exports.applyBackupReadings = applyBackupReadings;
-const EntityStatus_1 = __req("src/types/EntityStatus");
-const stateHelper_1 = __req("src/helpers/stateHelper");
+const EntityStatus_1 = require("../types/EntityStatus");
+const stateHelper_1 = require("./stateHelper");
 /** Energie die deze node richting Home stuurt (negatief = neemt energie van Home af). */
 function flowToHome(node, reading) {
     if (reading.watts === null)
@@ -3364,16 +3409,16 @@ function applyBackupReadings(nodes, connections, readings, demo) {
 }
 
 };
-__mods["src/helpers/groupHelper"]=(module,exports,__req)=>{
+__mods["helpers/groupHelper.js"] = function(module, exports, require){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.groupedGroups = groupedGroups;
 exports.createGroupNode = createGroupNode;
 exports.buildDisplayGraph = buildDisplayGraph;
 exports.applyGroupReadings = applyGroupReadings;
-const Connection_1 = __req("src/models/Connection");
-const Node_1 = __req("src/models/Node");
-const EntityStatus_1 = __req("src/types/EntityStatus");
+const Connection_1 = require("../models/Connection");
+const Node_1 = require("../models/Node");
+const EntityStatus_1 = require("../types/EntityStatus");
 function groupedGroups(cfg) {
     return cfg.groups.filter((g) => g.display === 'grouped');
 }
@@ -3437,14 +3482,14 @@ function applyGroupReadings(groups, groupNodes, readings) {
 }
 
 };
-__mods["src/helpers/historyHelper"]=(module,exports,__req)=>{
+__mods["helpers/historyHelper.js"] = function(module, exports, require){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.fetchHistoryBatch = fetchHistoryBatch;
 exports.fetchHistory = fetchHistory;
 exports.bucketize = bucketize;
 exports.unitFactor = unitFactor;
-const stateHelper_1 = __req("src/helpers/stateHelper");
+const stateHelper_1 = require("./stateHelper");
 const HOUR = 3_600_000;
 /**
  * Haalt de geschiedenis van meerdere vermogenssensoren in één Home Assistant-request op.
@@ -3525,7 +3570,7 @@ function unitFactor(unit) {
 }
 
 };
-__mods["src/helpers/i18n"]=(module,exports,__req)=>{
+__mods["helpers/i18n.js"] = function(module, exports, require){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.t = t;
@@ -3719,6 +3764,7 @@ const nl = {
     diag_consumers_exceed_home: "Gemeten apparaten hoger dan Woning",
     diag_unmetered_consumption: "Overig / ongemeten verbruik",
     diag_consumers_over_home: "Verschil t.o.v. Woning",
+    diag_descendant_issue: "Probleem in onderliggende apparaten",
     minutes_short: "min",
     replay: "Historie",
     replay_live: "Live",
@@ -3916,6 +3962,7 @@ const en = {
     diag_consumers_exceed_home: "Metered devices exceed Home",
     diag_unmetered_consumption: "Other / unmetered consumption",
     diag_consumers_over_home: "Difference versus Home",
+    diag_descendant_issue: "Issue in child devices",
     minutes_short: "min",
     replay: "Replay",
     replay_live: "Live",
@@ -3939,9 +3986,11 @@ function hassLanguage(hass) {
 }
 
 };
-__mods["src/helpers/mobileFocusHelper"]=(module,exports,__req)=>{
+__mods["helpers/mobileFocusHelper.js"] = function(module, exports, require){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.descendantConsumerIds = descendantConsumerIds;
+exports.countFocusableDescendants = countFocusableDescendants;
 exports.hasFocusableChildren = hasFocusableChildren;
 exports.buildMobileFocusGraph = buildMobileFocusGraph;
 function childConnections(id, nodesById, connections) {
@@ -3952,14 +4001,35 @@ function childConnections(id, nodesById, connections) {
         return !!child && child.role === 'consumer' && child.id !== id;
     });
 }
+/** All consumer descendants below a node, in breadth-first order. */
+function descendantConsumerIds(id, nodes, connections) {
+    const byId = new Map(nodes.map((n) => [n.id, n]));
+    const out = [];
+    const seen = new Set([id]);
+    const queue = [id];
+    while (queue.length) {
+        const current = queue.shift();
+        for (const conn of childConnections(current, byId, connections)) {
+            if (seen.has(conn.to))
+                continue;
+            seen.add(conn.to);
+            out.push(conn.to);
+            queue.push(conn.to);
+        }
+    }
+    return out;
+}
+function countFocusableDescendants(id, nodes, connections) {
+    return descendantConsumerIds(id, nodes, connections).length;
+}
 function hasFocusableChildren(id, nodes, connections) {
     const byId = new Map(nodes.map((n) => [n.id, n]));
     return childConnections(id, byId, connections).length > 0;
 }
 /**
  * Compact mobile graph: Home shows only its direct neighbours. Focusing a consumer/backup
- * shows that node as the centre plus only its direct children. This keeps labels readable
- * without changing the underlying full graph used for readings/history/replay.
+ * shows that node as the centre plus its complete descendant subtree. This keeps the main
+ * mobile overview readable while still exposing the whole branch after one tap.
  */
 function buildMobileFocusGraph(nodes, connections, requestedFocusId) {
     const byId = new Map(nodes.map((n) => [n.id, n]));
@@ -3974,7 +4044,9 @@ function buildMobileFocusGraph(nodes, connections, requestedFocusId) {
         visibleConnections = connections.filter((c) => c.from === home.id || c.to === home.id);
     }
     else {
-        visibleConnections = childConnections(focus.id, byId, connections);
+        const descendants = new Set(descendantConsumerIds(focus.id, nodes, connections));
+        visibleConnections = connections.filter((c) => (c.from === focus.id && descendants.has(c.to)) ||
+            (descendants.has(c.from) && descendants.has(c.to)));
         parentId = connections.find((c) => c.to === focus.id)?.from;
     }
     const ids = new Set([focus.id]);
@@ -3992,7 +4064,7 @@ function buildMobileFocusGraph(nodes, connections, requestedFocusId) {
 }
 
 };
-__mods["src/helpers/phaseHelper"]=(module,exports,__req)=>{
+__mods["helpers/phaseHelper.js"] = function(module, exports, require){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deriveL1Power = deriveL1Power;
@@ -4026,7 +4098,7 @@ function deriveL1History(total, l2, l3) {
 }
 
 };
-__mods["src/helpers/pricingHelper"]=(module,exports,__req)=>{
+__mods["helpers/pricingHelper.js"] = function(module, exports, require){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.readPrices = readPrices;
@@ -4225,7 +4297,7 @@ async function fetchTodayExportRevenue(hass, exportEnergyEntity, pricing, now = 
 }
 
 };
-__mods["src/helpers/replayHelper"]=(module,exports,__req)=>{
+__mods["helpers/replayHelper.js"] = function(module, exports, require){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.nearestHistoryPoint = nearestHistoryPoint;
@@ -4259,7 +4331,7 @@ function replayRange(series) {
 }
 
 };
-__mods["src/helpers/stateHelper"]=(module,exports,__req)=>{
+__mods["helpers/stateHelper.js"] = function(module, exports, require){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.parsePower = parsePower;
@@ -4268,7 +4340,7 @@ exports.readPower = readPower;
 exports.readNumber = readNumber;
 exports.formatPower = formatPower;
 exports.formatPercent = formatPercent;
-const EntityStatus_1 = __req("src/types/EntityStatus");
+const EntityStatus_1 = require("../types/EntityStatus");
 // Home Assistant gebruikt een punt als decimaalteken; alles anders is voor ons geen getal.
 const NUMBER_PATTERN = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
 /**
@@ -4352,11 +4424,11 @@ function round(value, decimals) {
 }
 
 };
-__mods["src/index"]=(module,exports,__req)=>{
+__mods["index.js"] = function(module, exports, require){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-const EnergyFlowCard_1 = __req("src/card/EnergyFlowCard");
-const EnergyFlowCardEditor_1 = __req("src/editor/EnergyFlowCardEditor");
+const EnergyFlowCard_1 = require("./card/EnergyFlowCard");
+const EnergyFlowCardEditor_1 = require("./editor/EnergyFlowCardEditor");
 if (!customElements.get('energy-flow-card-pro'))
     customElements.define('energy-flow-card-pro', EnergyFlowCard_1.EnergyFlowCard);
 if (!customElements.get('energy-flow-card-pro-editor'))
@@ -4370,15 +4442,15 @@ if (!window.customCards.some((c) => c.type === 'energy-flow-card-pro')) {
         preview: true,
     });
 }
-console.info('%c ENERGY-FLOW-CARD-PRO %c 0.17.0 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
+console.info('%c ENERGY-FLOW-CARD-PRO %c 0.18.0 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
 
 };
-__mods["src/layout/AutoLayout"]=(module,exports,__req)=>{
+__mods["layout/AutoLayout.js"] = function(module, exports, require){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.STRAIGHT_ROW_GAP = exports.HOME_RADIUS = exports.NODE_RADIUS = void 0;
 exports.computeLayout = computeLayout;
-const Connection_1 = __req("src/models/Connection");
+const Connection_1 = require("../models/Connection");
 exports.NODE_RADIUS = 38;
 exports.HOME_RADIUS = 46;
 /** Afstand tussen twee rijen in de rechte layout; de rechte lijnen buigen halverwege deze afstand af. */
@@ -4871,7 +4943,7 @@ function straightLayout(nodes, auto, links) {
 }
 
 };
-__mods["src/models/Connection"]=(module,exports,__req)=>{
+__mods["models/Connection.js"] = function(module, exports, require){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createConnection = createConnection;
@@ -4924,14 +4996,14 @@ function parentOf(node, nodes) {
 }
 
 };
-__mods["src/models/Node"]=(module,exports,__req)=>{
+__mods["models/Node.js"] = function(module, exports, require){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createNode = createNode;
 exports.generateId = generateId;
 exports.advancedFieldsFor = advancedFieldsFor;
 exports.fieldLabelKey = fieldLabelKey;
-const NodeType_1 = __req("src/types/NodeType");
+const NodeType_1 = require("../types/NodeType");
 function createNode(config, type, id) {
     return {
         id,
@@ -5020,14 +5092,14 @@ function fieldLabelKey(field, type) {
 }
 
 };
-__mods["src/renderer/ConnectionRenderer"]=(module,exports,__req)=>{
+__mods["renderer/ConnectionRenderer.js"] = function(module, exports, require){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.computeGeometry = computeGeometry;
 exports.particleDuration = particleDuration;
 exports.createConnectionElement = createConnectionElement;
-const AutoLayout_1 = __req("src/layout/AutoLayout");
-const dom_1 = __req("src/renderer/dom");
+const AutoLayout_1 = require("../layout/AutoLayout");
+const dom_1 = require("./dom");
 const GAP = 3;
 const PARTICLES = 3;
 const f1 = (n) => n.toFixed(1);
@@ -5204,17 +5276,17 @@ function createConnectionElement(conn, from, to, curved, color, orthogonal = fal
 }
 
 };
-__mods["src/renderer/NodeRenderer"]=(module,exports,__req)=>{
+__mods["renderer/NodeRenderer.js"] = function(module, exports, require){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.displayNameOf = displayNameOf;
 exports.describeNode = describeNode;
 exports.createNodeElement = createNodeElement;
-const i18n_1 = __req("src/helpers/i18n");
-const stateHelper_1 = __req("src/helpers/stateHelper");
-const EntityStatus_1 = __req("src/types/EntityStatus");
-const NodeType_1 = __req("src/types/NodeType");
-const dom_1 = __req("src/renderer/dom");
+const i18n_1 = require("../helpers/i18n");
+const stateHelper_1 = require("../helpers/stateHelper");
+const EntityStatus_1 = require("../types/EntityStatus");
+const NodeType_1 = require("../types/NodeType");
+const dom_1 = require("./dom");
 const DEFAULT_NAMES = { home: 'home', grid: 'grid', solar: 'solar', battery: 'battery', backup: 'type_backup' };
 function displayNameOf(node, language) {
     if (node.name)
@@ -5340,11 +5412,14 @@ labelPosition = 'below') {
     badge.append((0, dom_1.svg)('circle', { r: 11 }), (0, dom_1.svg)('path', { d: BOLT, class: 'bolt' }));
     const diagnostic = (0, dom_1.svg)('g', { class: 'diagnostic-badge', transform: `translate(${-radius * 0.72} ${-radius * 0.72})`, visibility: 'hidden' });
     diagnostic.append((0, dom_1.svg)('circle', { r: 9 }), (0, dom_1.svg)('text', { x: 0, y: 4, 'text-anchor': 'middle' }, '!'));
+    const childBadge = (0, dom_1.svg)('g', { class: 'child-badge', transform: `translate(${radius * 0.72} ${radius * 0.72})`, visibility: 'hidden' });
+    const childBadgeText = (0, dom_1.svg)('text', { x: 0, y: 3.5, 'text-anchor': 'middle' });
+    childBadge.append((0, dom_1.svg)('circle', { r: 9 }), childBadgeText);
     if (isBattery)
         g.append(socText);
     if (!hasIcon)
         g.append(nameIn);
-    g.append(value, badge, diagnostic);
+    g.append(value, badge, diagnostic, childBadge);
     if (hasIcon)
         g.append(label, sub);
     else
@@ -5369,6 +5444,14 @@ labelPosition = 'below') {
         (0, dom_1.setText)(socText, view.socText ?? '');
         (0, dom_1.setText)(sub, view.subtitle ?? '');
         (0, dom_1.setText)(subNoIcon, view.subtitle ?? '');
+        if ((view.childCount ?? 0) > 0) {
+            childBadge.setAttribute('visibility', 'visible');
+            (0, dom_1.setText)(childBadgeText, view.childCount > 9 ? '9+' : String(view.childCount));
+        }
+        else {
+            childBadge.setAttribute('visibility', 'hidden');
+            (0, dom_1.setText)(childBadgeText, '');
+        }
         if (view.diagnostic === 'warning' || view.diagnostic === 'error') {
             diagnostic.setAttribute('visibility', 'visible');
             diagnostic.setAttribute('data-severity', view.diagnostic);
@@ -5387,15 +5470,15 @@ labelPosition = 'below') {
 }
 
 };
-__mods["src/renderer/PopupRenderer"]=(module,exports,__req)=>{
+__mods["renderer/PopupRenderer.js"] = function(module, exports, require){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Popup = void 0;
 exports.buildGraph = buildGraph;
 exports.buildPhaseGraph = buildPhaseGraph;
-const i18n_1 = __req("src/helpers/i18n");
-const stateHelper_1 = __req("src/helpers/stateHelper");
-const dom_1 = __req("src/renderer/dom");
+const i18n_1 = require("../helpers/i18n");
+const stateHelper_1 = require("../helpers/stateHelper");
+const dom_1 = require("./dom");
 const W = 320;
 const H = 128;
 const PAD = { l: 6, r: 6, t: 20, b: 20 };
@@ -5768,7 +5851,7 @@ class Popup {
 exports.Popup = Popup;
 
 };
-__mods["src/renderer/dom"]=(module,exports,__req)=>{
+__mods["renderer/dom.js"] = function(module, exports, require){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.svg = svg;
@@ -5807,7 +5890,7 @@ function setAttr(el, name, value) {
 }
 
 };
-__mods["src/types/EntityStatus"]=(module,exports,__req)=>{
+__mods["types/EntityStatus.js"] = function(module, exports, require){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EntityStatus = void 0;
@@ -5847,7 +5930,7 @@ function hasValue(status) {
 }
 
 };
-__mods["src/types/NodeType"]=(module,exports,__req)=>{
+__mods["types/NodeType.js"] = function(module, exports, require){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TYPES_WITH_DEFAULT_ICON = exports.NODE_TYPES = void 0;
@@ -5912,11 +5995,27 @@ function roleOf(type) {
 exports.TYPES_WITH_DEFAULT_ICON = new Set(['home', 'grid', 'solar', 'battery', 'backup']);
 
 };
-__mods["src/types/hass"]=(module,exports,__req)=>{
+__mods["types/hass.js"] = function(module, exports, require){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 
 };
-function __req(id){if(__cache[id])return __cache[id].exports;const f=__mods[id];if(!f)throw new Error('Module not found: '+id);const m={exports:{}};__cache[id]=m;f(m,m.exports,__req);return m.exports;}
-__req('src/index');
+
+const __cache = Object.create(null);
+function __norm(parts){ const out=[]; for(const p of parts){ if(!p||p==='.') continue; if(p==='..') out.pop(); else out.push(p); } return out.join('/'); }
+function __resolve(from, req){
+  if(!req.startsWith('.')) throw new Error('External module not bundled: '+req);
+  const base=from.split('/'); base.pop();
+  let id=__norm(base.concat(req.split('/')));
+  if(!id.endsWith('.js')) id += '.js';
+  return id;
+}
+function __load(id){
+  if(__cache[id]) return __cache[id].exports;
+  const fn=__mods[id]; if(!fn) throw new Error('Module not found: '+id);
+  const module={exports:{}}; __cache[id]=module;
+  fn(module,module.exports,(req)=>__load(__resolve(id,req)));
+  return module.exports;
+}
+__load('index.js');
 })();
