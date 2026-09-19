@@ -47,6 +47,8 @@ export class EnergyFlowCard extends HTMLElement {
   private openNodeId?: string;
   private computed?: Computed;
   private history = new Map<string, { state: HistoryState; fetchedAt: number }>();
+  private phaseHistory = new Map<string, HistoryState>();
+  private phaseGraphEnabled = new Set<string>();
   private historyBundleInFlight?: Promise<void>;
   private historyBundleFetchedAt = 0;
   private preloadTimer?: number;
@@ -73,6 +75,8 @@ export class EnergyFlowCard extends HTMLElement {
     this.config = normalizeConfig(raw); // gooit bij ongeldige config; HA toont dan een foutkaart
     this.closePopup();
     this.history.clear();
+    this.phaseHistory.clear();
+    this.phaseGraphEnabled.clear();
     this.historyBundleInFlight = undefined;
     this.historyBundleFetchedAt = 0;
     this.cancelHistoryPreload();
@@ -422,6 +426,8 @@ export class EnergyFlowCard extends HTMLElement {
       );
     }
 
+    const phases = node.type === 'grid' ? this.phasePopupModel(node, history) : undefined;
+
     return {
       nodeType: node.type,
       title: view.displayName,
@@ -430,10 +436,60 @@ export class EnergyFlowCard extends HTMLElement {
       status: view.status,
       rows,
       history,
+      phases,
       note: node.groupMembers?.length ? `${t('group_total_of', lang)} ${node.groupMembers.length}` : node.role === 'home' ? t(computedHome ? 'home_computed' : 'home_measured', lang) : undefined,
       powerFormat: cfg.powerFormat,
       language: lang,
     };
+  }
+
+  private phasePopupModel(node: EnergyNode, totalHistory: HistoryState): PopupModel['phases'] | undefined {
+    const cfg = this.config;
+    if (!cfg || node.type !== 'grid') return undefined;
+
+    const ids = [
+      node.config.phase_l1_power_entity,
+      node.config.phase_l2_power_entity,
+      node.config.phase_l3_power_entity,
+    ];
+    const hasConfiguredPhases = ids.some(Boolean);
+    if (!cfg.demo && !hasConfiguredPhases) return undefined;
+
+    const labels = ['L1', 'L2', 'L3'] as const;
+    const classes = ['phase-l1', 'phase-l2', 'phase-l3'] as const;
+    const demoSeries = cfg.demo && totalHistory.kind === 'ready'
+      ? this.demoPhaseHistory(totalHistory)
+      : undefined;
+    const series = labels.map((label, index) => ({
+      label,
+      cssClass: classes[index]!,
+      history: demoSeries?.[index] ?? (ids[index] ? (this.phaseHistory.get(ids[index]!) ?? { kind: 'loading' as const }) : { kind: 'none' as const }),
+    }));
+
+    return {
+      enabled: this.phaseGraphEnabled.has(node.id),
+      series,
+      onToggle: (enabled: boolean) => {
+        if (enabled) this.phaseGraphEnabled.add(node.id);
+        else this.phaseGraphEnabled.delete(node.id);
+        if (enabled && !cfg.demo) void this.ensureHistoryBundle();
+        this.refreshOpenPopup(node.id);
+      },
+    };
+  }
+
+  /** Demo-fasen zijn bewust niet exact gelijk verdeeld, zodat de 3-lijnsgrafiek zichtbaar te testen is. */
+  private demoPhaseHistory(total: Extract<HistoryState, { kind: 'ready' }>): HistoryState[] {
+    const factors = [0.38, 0.33, 0.29];
+    return factors.map((factor, phase) => ({
+      kind: 'ready' as const,
+      start: total.start,
+      end: total.end,
+      points: total.points.map((point, index) => ({
+        t: point.t,
+        v: point.v * factor * (1 + 0.12 * Math.sin(index / 7 + phase * 1.9)),
+      })),
+    }));
   }
 
   private async ensureTodayExportRevenue(): Promise<void> {
@@ -506,7 +562,15 @@ export class EnergyFlowCard extends HTMLElement {
     const ids = new Set<string>();
     for (const node of cfg.nodes) {
       const c = node.config;
-      for (const id of [c.power_entity, c.production_entity, c.charge_power_entity, c.discharge_power_entity]) {
+      for (const id of [
+        c.power_entity,
+        c.production_entity,
+        c.charge_power_entity,
+        c.discharge_power_entity,
+        c.phase_l1_power_entity,
+        c.phase_l2_power_entity,
+        c.phase_l3_power_entity,
+      ]) {
         if (typeof id === 'string' && id) ids.add(id);
       }
     }
@@ -536,6 +600,18 @@ export class EnergyFlowCard extends HTMLElement {
       for (const id of entityIds) {
         const points = bucketize(raw.get(id) ?? [], start, end, HISTORY_BUCKETS);
         series.set(id, new Map(points.map((p) => [p.t, p.v])));
+      }
+
+      // Bewaar de drie netfasen apart. De normale node-history blijft het totale netvermogen tonen;
+      // de popup kan optioneel naar deze drie losse reeksen omschakelen.
+      const grid = cfg.nodes.find((n) => n.type === 'grid');
+      if (grid) {
+        for (const id of [grid.config.phase_l1_power_entity, grid.config.phase_l2_power_entity, grid.config.phase_l3_power_entity]) {
+          if (!id) continue;
+          let points = bucketize(raw.get(id) ?? [], start, end, HISTORY_BUCKETS);
+          if (grid.invert) points = points.map((point) => ({ ...point, v: -point.v }));
+          this.phaseHistory.set(id, points.length >= 2 ? { kind: 'ready', points, start, end } : { kind: 'none' });
+        }
       }
 
       const historyNodes = this.displayNodes.length ? this.displayNodes : cfg.nodes;
@@ -573,7 +649,12 @@ export class EnergyFlowCard extends HTMLElement {
     } catch {
       const fetchedAt = Date.now();
       for (const node of cfg.nodes) if (!this.history.has(node.id)) this.storeHistory(node, { kind: 'none' }, fetchedAt);
+      const grid = cfg.nodes.find((n) => n.type === 'grid');
+      if (grid) for (const id of [grid.config.phase_l1_power_entity, grid.config.phase_l2_power_entity, grid.config.phase_l3_power_entity]) {
+        if (id) this.phaseHistory.set(id, { kind: 'none' });
+      }
       this.historyBundleFetchedAt = fetchedAt;
+      if (grid) this.refreshOpenPopup(grid.id);
     }
   }
 

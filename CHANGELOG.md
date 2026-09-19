@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.10.0
+
+- Added optional L1/L2/L3 power, voltage and current entities to Grid advanced configuration.
+- Added a **Show phases** toggle in the Grid popup while keeping total Grid history as the default view.
+- Added a shared-scale 24-hour three-line graph for L1/L2/L3 with distinct phase colors and legend.
+- Included phase power sensors in the existing bundled background history request.
+- Added Demo-mode phase history for testing without real sensors.
+- Kept phase analysis intentionally simple: no phase-imbalance calculation or warning logic.
+- Added Dutch and English labels for all three-phase fields and controls.
+- Updated runtime/package version to **0.10.0**.
+
 ## 0.9.2
 
 - Changed public branding to **Energy Flow Card Pro** while retaining the existing `energy-flow-card` custom element and `energy-flow-card.js` resource filename for backward compatibility.

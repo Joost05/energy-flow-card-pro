@@ -21,6 +21,15 @@ export type AdvancedField =
   | 'energy_total_entity'
   | 'energy_import_entity'
   | 'energy_export_entity'
+  | 'phase_l1_power_entity'
+  | 'phase_l2_power_entity'
+  | 'phase_l3_power_entity'
+  | 'phase_l1_voltage_entity'
+  | 'phase_l2_voltage_entity'
+  | 'phase_l3_voltage_entity'
+  | 'phase_l1_current_entity'
+  | 'phase_l2_current_entity'
+  | 'phase_l3_current_entity'
   | 'energy_charged_entity'
   | 'energy_discharged_entity';
 
@@ -102,7 +111,19 @@ export function advancedFieldsFor(type: NodeType): AdvancedField[] {
     case 'producer':
       return ['production_entity', 'energy_today_entity', 'energy_total_entity', 'inverter_temperature_entity'];
     case 'grid':
-      return ['energy_import_entity', 'energy_export_entity'];
+      return [
+        'energy_import_entity',
+        'energy_export_entity',
+        'phase_l1_power_entity',
+        'phase_l2_power_entity',
+        'phase_l3_power_entity',
+        'phase_l1_voltage_entity',
+        'phase_l2_voltage_entity',
+        'phase_l3_voltage_entity',
+        'phase_l1_current_entity',
+        'phase_l2_current_entity',
+        'phase_l3_current_entity',
+      ];
     case 'consumer':
     case 'ev_charger':
     case 'heat_pump':

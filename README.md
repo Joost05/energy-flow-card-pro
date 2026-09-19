@@ -21,9 +21,19 @@ A custom Home Assistant Lovelace card for advanced live energy flows, device-lev
 - Responsive layout for desktop, tablet and mobile
 - Optional electricity pricing with fixed import/export tariffs or Home Assistant price entities
 - Live grid cost/revenue rate plus **Revenue today** in the Grid detail popup
+- Optional three-phase Grid detail: L1/L2/L3 power history in one graph, plus optional phase voltage/current measurements
 - Demo mode with example energy prices for testing without sensors
 
 ## Version history
+
+### v0.10.0
+
+- Added optional three-phase Grid sensors for L1/L2/L3 power, voltage and current.
+- Added a **Show phases** switch inside the Grid popup; the normal total Grid graph remains the default.
+- When enabled, the 24-hour graph shows L1, L2 and L3 together as three clearly distinguished lines on one shared scale.
+- Three-phase history is included in the existing bundled background history request, so it benefits from the same preload behavior.
+- Demo mode now includes a three-phase graph so the feature can be tested without sensors.
+- Deliberately did not add phase-imbalance calculations; the feature stays focused on clear per-phase measurements.
 
 ### v0.9.2
 
@@ -187,6 +197,30 @@ pricing:
 Price entities may use currency/kWh or cent/kWh units. The card normalizes common cent-per-kWh units automatically.
 
 When pricing is enabled, the card shows a compact current import/export price badge. The **Grid** popup shows current price, current cost/revenue rate and, when `energy_export_entity` is configured on the Grid node, estimated **Revenue today** from today's exported energy. For variable price entities the historic price series is used when Home Assistant history is available.
+
+## Optional three-phase Grid details
+
+Three-phase support is optional and only affects the **Grid** detail popup. The main energy-flow diagram stays compact and continues to show the total Grid power.
+
+In the visual editor, open **Advanced** on the Grid device and optionally select power, voltage and current sensors for L1, L2 and L3. The three power sensors enable the multi-line 24-hour phase graph. Voltage and current values are shown as detail rows.
+
+```yaml
+nodes:
+  - name: Grid
+    type: grid
+    power_entity: sensor.grid_total_power
+    phase_l1_power_entity: sensor.grid_l1_power
+    phase_l2_power_entity: sensor.grid_l2_power
+    phase_l3_power_entity: sensor.grid_l3_power
+    phase_l1_voltage_entity: sensor.grid_l1_voltage
+    phase_l2_voltage_entity: sensor.grid_l2_voltage
+    phase_l3_voltage_entity: sensor.grid_l3_voltage
+    phase_l1_current_entity: sensor.grid_l1_current
+    phase_l2_current_entity: sensor.grid_l2_current
+    phase_l3_current_entity: sensor.grid_l3_current
+```
+
+Open the Grid node and enable **Show phases** to switch the graph from total Grid power to L1/L2/L3. Phase imbalance is intentionally not calculated.
 
 ## Optional device groups
 

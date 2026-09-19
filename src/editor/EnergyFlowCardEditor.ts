@@ -7,7 +7,7 @@ import type { Hass } from '../types/hass';
 import { NODE_TYPES, NodeType, normalizeType, roleOf } from '../types/NodeType';
 
 const SELECTABLE_TYPES = NODE_TYPES.filter((type) => type !== 'home');
-const POWER_FIELDS = new Set(['power_entity', 'charge_power_entity', 'discharge_power_entity', 'production_entity']);
+const POWER_FIELDS = new Set(['power_entity', 'charge_power_entity', 'discharge_power_entity', 'production_entity', 'phase_l1_power_entity', 'phase_l2_power_entity', 'phase_l3_power_entity']);
 const ICON_PRESETS: Array<{ value: string; key: string }> = [
   { value: '', key: 'icon_auto' },
   { value: 'mdi:solar-power', key: 'icon_solar' },

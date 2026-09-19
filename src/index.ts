@@ -20,4 +20,4 @@ if (!window.customCards.some((c) => c.type === 'energy-flow-card')) {
   });
 }
 
-console.info('%c ENERGY-FLOW-CARD-PRO %c 0.9.2 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
+console.info('%c ENERGY-FLOW-CARD-PRO %c 0.10.0 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');

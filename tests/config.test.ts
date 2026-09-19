@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it, test } from 'node:test';
 import { ConfigError, normalizeConfig } from '../src/config/CardConfig';
-import { generateId } from '../src/models/Node';
+import { advancedFieldsFor, generateId } from '../src/models/Node';
 import { normalizeType } from '../src/types/NodeType';
 
 describe('generateId', () => {
@@ -210,4 +210,28 @@ test('legacy dynamic pricing is migrated to Home Assistant price entities', () =
   assert.equal(cfg.pricing.mode, 'entities');
   assert.equal(cfg.pricing.importPriceEntity, 'sensor.buy');
   assert.equal(cfg.pricing.exportPriceEntity, 'sensor.sell');
+});
+
+
+describe('three-phase grid configuration', () => {
+  it('offers optional L1/L2/L3 power, voltage and current sensors for the grid', () => {
+    const fields = advancedFieldsFor('grid');
+    for (const field of [
+      'phase_l1_power_entity', 'phase_l2_power_entity', 'phase_l3_power_entity',
+      'phase_l1_voltage_entity', 'phase_l2_voltage_entity', 'phase_l3_voltage_entity',
+      'phase_l1_current_entity', 'phase_l2_current_entity', 'phase_l3_current_entity',
+    ]) assert.ok(fields.includes(field as never), field);
+  });
+
+  it('preserves phase entities in the normalized grid node', () => {
+    const cfg = normalizeConfig({
+      nodes: [{
+        name: 'Net', type: 'grid', power_entity: 'sensor.grid',
+        phase_l1_power_entity: 'sensor.l1', phase_l2_power_entity: 'sensor.l2', phase_l3_power_entity: 'sensor.l3',
+      }],
+    });
+    const grid = cfg.nodes.find((node) => node.type === 'grid')!;
+    assert.equal(grid.config.phase_l1_power_entity, 'sensor.l1');
+    assert.equal(grid.config.phase_l3_power_entity, 'sensor.l3');
+  });
 });

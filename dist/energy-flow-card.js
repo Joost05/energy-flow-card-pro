@@ -1,4 +1,4 @@
-// energy-flow-card v0.9.1 - generated bundle
+// energy-flow-card-pro v0.10.0 - generated bundle
 (function(){
 'use strict';
 const __modules={
@@ -39,6 +39,8 @@ class EnergyFlowCard extends HTMLElement {
         this.connEls = [];
         this.popup = new PopupRenderer_1.Popup(() => this.closePopup());
         this.history = new Map();
+        this.phaseHistory = new Map();
+        this.phaseGraphEnabled = new Set();
         this.historyBundleFetchedAt = 0;
         this.demoStart = 0;
         this.reducedMotion = false;
@@ -54,6 +56,8 @@ class EnergyFlowCard extends HTMLElement {
         this.config = (0, CardConfig_1.normalizeConfig)(raw); // gooit bij ongeldige config; HA toont dan een foutkaart
         this.closePopup();
         this.history.clear();
+        this.phaseHistory.clear();
+        this.phaseGraphEnabled.clear();
         this.historyBundleInFlight = undefined;
         this.historyBundleFetchedAt = 0;
         this.cancelHistoryPreload();
@@ -366,6 +370,7 @@ class EnergyFlowCard extends HTMLElement {
             const avg = history.points.reduce((sum, point) => sum + point.v, 0) / history.points.length;
             rows.unshift({ label: (0, i18n_1.t)('peak_power', lang), value: `${peak.v < 0 ? '−' : ''}${(0, stateHelper_1.formatPower)(peak.v, cfg.powerFormat)}` }, { label: (0, i18n_1.t)('peak_time', lang), value: new Date(peak.t).toLocaleTimeString(lang || undefined, { hour: '2-digit', minute: '2-digit' }) }, { label: (0, i18n_1.t)('average_power', lang), value: `${avg < 0 ? '−' : ''}${(0, stateHelper_1.formatPower)(avg, cfg.powerFormat)}` });
         }
+        const phases = node.type === 'grid' ? this.phasePopupModel(node, history) : undefined;
         return {
             nodeType: node.type,
             title: view.displayName,
@@ -374,10 +379,60 @@ class EnergyFlowCard extends HTMLElement {
             status: view.status,
             rows,
             history,
+            phases,
             note: node.groupMembers?.length ? `${(0, i18n_1.t)('group_total_of', lang)} ${node.groupMembers.length}` : node.role === 'home' ? (0, i18n_1.t)(computedHome ? 'home_computed' : 'home_measured', lang) : undefined,
             powerFormat: cfg.powerFormat,
             language: lang,
         };
+    }
+    phasePopupModel(node, totalHistory) {
+        const cfg = this.config;
+        if (!cfg || node.type !== 'grid')
+            return undefined;
+        const ids = [
+            node.config.phase_l1_power_entity,
+            node.config.phase_l2_power_entity,
+            node.config.phase_l3_power_entity,
+        ];
+        const hasConfiguredPhases = ids.some(Boolean);
+        if (!cfg.demo && !hasConfiguredPhases)
+            return undefined;
+        const labels = ['L1', 'L2', 'L3'];
+        const classes = ['phase-l1', 'phase-l2', 'phase-l3'];
+        const demoSeries = cfg.demo && totalHistory.kind === 'ready'
+            ? this.demoPhaseHistory(totalHistory)
+            : undefined;
+        const series = labels.map((label, index) => ({
+            label,
+            cssClass: classes[index],
+            history: demoSeries?.[index] ?? (ids[index] ? (this.phaseHistory.get(ids[index]) ?? { kind: 'loading' }) : { kind: 'none' }),
+        }));
+        return {
+            enabled: this.phaseGraphEnabled.has(node.id),
+            series,
+            onToggle: (enabled) => {
+                if (enabled)
+                    this.phaseGraphEnabled.add(node.id);
+                else
+                    this.phaseGraphEnabled.delete(node.id);
+                if (enabled && !cfg.demo)
+                    void this.ensureHistoryBundle();
+                this.refreshOpenPopup(node.id);
+            },
+        };
+    }
+    /** Demo-fasen zijn bewust niet exact gelijk verdeeld, zodat de 3-lijnsgrafiek zichtbaar te testen is. */
+    demoPhaseHistory(total) {
+        const factors = [0.38, 0.33, 0.29];
+        return factors.map((factor, phase) => ({
+            kind: 'ready',
+            start: total.start,
+            end: total.end,
+            points: total.points.map((point, index) => ({
+                t: point.t,
+                v: point.v * factor * (1 + 0.12 * Math.sin(index / 7 + phase * 1.9)),
+            })),
+        }));
     }
     async ensureTodayExportRevenue() {
         const cfg = this.config;
@@ -458,7 +513,15 @@ class EnergyFlowCard extends HTMLElement {
         const ids = new Set();
         for (const node of cfg.nodes) {
             const c = node.config;
-            for (const id of [c.power_entity, c.production_entity, c.charge_power_entity, c.discharge_power_entity]) {
+            for (const id of [
+                c.power_entity,
+                c.production_entity,
+                c.charge_power_entity,
+                c.discharge_power_entity,
+                c.phase_l1_power_entity,
+                c.phase_l2_power_entity,
+                c.phase_l3_power_entity,
+            ]) {
                 if (typeof id === 'string' && id)
                     ids.add(id);
             }
@@ -489,6 +552,19 @@ class EnergyFlowCard extends HTMLElement {
             for (const id of entityIds) {
                 const points = (0, historyHelper_1.bucketize)(raw.get(id) ?? [], start, end, HISTORY_BUCKETS);
                 series.set(id, new Map(points.map((p) => [p.t, p.v])));
+            }
+            // Bewaar de drie netfasen apart. De normale node-history blijft het totale netvermogen tonen;
+            // de popup kan optioneel naar deze drie losse reeksen omschakelen.
+            const grid = cfg.nodes.find((n) => n.type === 'grid');
+            if (grid) {
+                for (const id of [grid.config.phase_l1_power_entity, grid.config.phase_l2_power_entity, grid.config.phase_l3_power_entity]) {
+                    if (!id)
+                        continue;
+                    let points = (0, historyHelper_1.bucketize)(raw.get(id) ?? [], start, end, HISTORY_BUCKETS);
+                    if (grid.invert)
+                        points = points.map((point) => ({ ...point, v: -point.v }));
+                    this.phaseHistory.set(id, points.length >= 2 ? { kind: 'ready', points, start, end } : { kind: 'none' });
+                }
             }
             const historyNodes = this.displayNodes.length ? this.displayNodes : cfg.nodes;
             const perNode = new Map(historyNodes.map((n) => [n.id, []]));
@@ -531,7 +607,15 @@ class EnergyFlowCard extends HTMLElement {
             for (const node of cfg.nodes)
                 if (!this.history.has(node.id))
                     this.storeHistory(node, { kind: 'none' }, fetchedAt);
+            const grid = cfg.nodes.find((n) => n.type === 'grid');
+            if (grid)
+                for (const id of [grid.config.phase_l1_power_entity, grid.config.phase_l2_power_entity, grid.config.phase_l3_power_entity]) {
+                    if (id)
+                        this.phaseHistory.set(id, { kind: 'none' });
+                }
             this.historyBundleFetchedAt = fetchedAt;
+            if (grid)
+                this.refreshOpenPopup(grid.id);
         }
     }
     storeHistory(node, state, fetchedAt = Date.now()) {
@@ -840,6 +924,18 @@ ha-card.fallback {
 .graph .area { fill: var(--c); opacity: 0.14; }
 .graph .zero { stroke: var(--divider-color, #cfcfcf); stroke-dasharray: 3 3; }
 .graph .axis { fill: var(--secondary-text-color, #727272); font-size: 10.5px; }
+.phase-trace { stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.phase-l1 { --phase-c: var(--efc-phase-l1, #42a5f5); }
+.phase-l2 { --phase-c: var(--efc-phase-l2, #ffb300); }
+.phase-l3 { --phase-c: var(--efc-phase-l3, #ab47bc); }
+.phase-trace.phase-l1, .phase-trace.phase-l2, .phase-trace.phase-l3 { stroke: var(--phase-c); }
+.phase-legend { display: flex; gap: 16px; align-items: center; justify-content: center; margin-top: 4px; font-size: 12px; color: var(--secondary-text-color, #727272); }
+.phase-key { display: inline-flex; align-items: center; gap: 6px; }
+.phase-key i { width: 16px; height: 3px; border-radius: 99px; background: var(--phase-c); display: inline-block; }
+.phase-toggle { display: grid; grid-template-columns: auto 1fr; column-gap: 10px; align-items: center; margin-top: 10px; cursor: pointer; }
+.phase-toggle input { width: 18px; height: 18px; grid-row: 1 / span 2; }
+.phase-toggle span { font-size: 14px; color: var(--primary-text-color); }
+.phase-toggle small { font-size: 12px; color: var(--secondary-text-color, #727272); }
 .popup-empty { padding: 22px 0; text-align: center; color: var(--secondary-text-color, #727272); font-size: 14px; }
 .popup-rows { display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; margin: 12px 0 0; font-size: 14px; }
 .popup-rows dt { color: var(--secondary-text-color, #727272); }
@@ -1266,7 +1362,7 @@ const Node_1 = require("../models/Node");
 const dom_1 = require("../renderer/dom");
 const NodeType_1 = require("../types/NodeType");
 const SELECTABLE_TYPES = NodeType_1.NODE_TYPES.filter((type) => type !== 'home');
-const POWER_FIELDS = new Set(['power_entity', 'charge_power_entity', 'discharge_power_entity', 'production_entity']);
+const POWER_FIELDS = new Set(['power_entity', 'charge_power_entity', 'discharge_power_entity', 'production_entity', 'phase_l1_power_entity', 'phase_l2_power_entity', 'phase_l3_power_entity']);
 const ICON_PRESETS = [
     { value: '', key: 'icon_auto' },
     { value: 'mdi:solar-power', key: 'icon_solar' },
@@ -2432,6 +2528,17 @@ const nl = {
     energy_discharged: "Ontladen",
     charge_power: "Laadvermogen",
     discharge_power: "Ontlaadvermogen",
+    phase_l1_power: "L1 vermogen",
+    phase_l2_power: "L2 vermogen",
+    phase_l3_power: "L3 vermogen",
+    phase_l1_voltage: "L1 spanning",
+    phase_l2_voltage: "L2 spanning",
+    phase_l3_voltage: "L3 spanning",
+    phase_l1_current: "L1 stroom",
+    phase_l2_current: "L2 stroom",
+    phase_l3_current: "L3 stroom",
+    show_phases: "Toon fasen",
+    phase_graph_hint: "Toon L1, L2 en L3 in de grafiek",
     demo_badge: "Demo",
     empty_title: "Nog geen apparaten",
     empty_hint: "Voeg nodes toe in de configuratie, of zet demo: true aan om de kaart te proberen.",
@@ -2568,6 +2675,17 @@ const en = {
     energy_discharged: "Discharged",
     charge_power: "Charge power",
     discharge_power: "Discharge power",
+    phase_l1_power: "L1 power",
+    phase_l2_power: "L2 power",
+    phase_l3_power: "L3 power",
+    phase_l1_voltage: "L1 voltage",
+    phase_l2_voltage: "L2 voltage",
+    phase_l3_voltage: "L3 voltage",
+    phase_l1_current: "L1 current",
+    phase_l2_current: "L2 current",
+    phase_l3_current: "L3 current",
+    show_phases: "Show phases",
+    phase_graph_hint: "Show L1, L2 and L3 in the graph",
     demo_badge: "Demo",
     empty_title: "No devices yet",
     empty_hint: "Add nodes to the configuration, or set demo: true to try the card.",
@@ -2941,7 +3059,7 @@ if (!window.customCards.some((c) => c.type === 'energy-flow-card')) {
         preview: true,
     });
 }
-console.info('%c ENERGY-FLOW-CARD-PRO %c 0.9.2 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
+console.info('%c ENERGY-FLOW-CARD-PRO %c 0.10.0 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
 
 },
 "src/layout/AutoLayout.ts":function(require,module,exports){
@@ -3476,7 +3594,19 @@ function advancedFieldsFor(type) {
         case 'producer':
             return ['production_entity', 'energy_today_entity', 'energy_total_entity', 'inverter_temperature_entity'];
         case 'grid':
-            return ['energy_import_entity', 'energy_export_entity'];
+            return [
+                'energy_import_entity',
+                'energy_export_entity',
+                'phase_l1_power_entity',
+                'phase_l2_power_entity',
+                'phase_l3_power_entity',
+                'phase_l1_voltage_entity',
+                'phase_l2_voltage_entity',
+                'phase_l3_voltage_entity',
+                'phase_l1_current_entity',
+                'phase_l2_current_entity',
+                'phase_l3_current_entity',
+            ];
         case 'consumer':
         case 'ev_charger':
         case 'heat_pump':
@@ -3869,6 +3999,7 @@ labelPosition = 'below') {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Popup = void 0;
 exports.buildGraph = buildGraph;
+exports.buildPhaseGraph = buildPhaseGraph;
 const i18n_1 = require("../helpers/i18n");
 const stateHelper_1 = require("../helpers/stateHelper");
 const dom_1 = require("./dom");
@@ -3901,6 +4032,37 @@ function buildGraph(points, start, end, format, language) {
         root.append((0, dom_1.svg)('text', { class: 'axis', x: W - PAD.r, y: 12, 'text-anchor': 'end' }, `${(0, i18n_1.t)('minimum', language)} ${signed(minV, format)}`));
     }
     return root;
+}
+/** Driefaseweergave: dezelfde tijdas en schaal voor L1/L2/L3, zodat de lijnen direct vergelijkbaar zijn. */
+function buildPhaseGraph(series, format, language) {
+    const ready = series.filter((s) => s.history.kind === 'ready');
+    if (ready.length === 0) {
+        const loading = series.some((s) => s.history.kind === 'loading');
+        return (0, dom_1.html)('div', { class: 'popup-empty' }, (0, i18n_1.t)(loading ? 'loading' : 'no_history', language));
+    }
+    const start = Math.min(...ready.map((s) => s.history.start));
+    const end = Math.max(...ready.map((s) => s.history.end));
+    const values = ready.flatMap((s) => s.history.points.map((p) => p.v));
+    const maxV = Math.max(0, ...values);
+    const minV = Math.min(0, ...values);
+    const hi = maxV === minV ? minV + 1 : maxV;
+    const lo = minV;
+    const x = (ms) => PAD.l + ((ms - start) / (end - start)) * (W - PAD.l - PAD.r);
+    const y = (v) => PAD.t + (1 - (v - lo) / (hi - lo)) * (H - PAD.t - PAD.b);
+    const y0 = y(0);
+    const root = (0, dom_1.svg)('svg', { class: 'graph phase-graph', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': `${(0, i18n_1.t)('last_24h', language)} L1 L2 L3` });
+    root.append((0, dom_1.svg)('line', { class: 'zero', x1: PAD.l, x2: W - PAD.r, y1: y0.toFixed(1), y2: y0.toFixed(1) }), (0, dom_1.svg)('text', { class: 'axis', x: PAD.l, y: 12 }, `${(0, i18n_1.t)('maximum', language)} ${signed(maxV, format)}`), (0, dom_1.svg)('text', { class: 'axis', x: PAD.l, y: H - 5 }, clock(start, language)), (0, dom_1.svg)('text', { class: 'axis', x: W - PAD.r, y: H - 5, 'text-anchor': 'end' }, clock(end, language)));
+    if (minV < 0)
+        root.append((0, dom_1.svg)('text', { class: 'axis', x: W - PAD.r, y: 12, 'text-anchor': 'end' }, `${(0, i18n_1.t)('minimum', language)} ${signed(minV, format)}`));
+    for (const item of ready) {
+        const line = item.history.points.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(p.t).toFixed(1)} ${y(p.v).toFixed(1)}`).join(' ');
+        root.append((0, dom_1.svg)('path', { class: `phase-trace ${item.cssClass}`, d: line, fill: 'none' }));
+    }
+    const legend = (0, dom_1.html)('div', { class: 'phase-legend' });
+    for (const item of series) {
+        legend.append((0, dom_1.html)('span', { class: `phase-key ${item.cssClass}` }, (0, dom_1.html)('i', {}), item.label));
+    }
+    return (0, dom_1.html)('div', { class: 'phase-graph-wrap' }, root, legend);
 }
 class Popup {
     constructor(onClose) {
@@ -3941,7 +4103,11 @@ class Popup {
         this.opener = null;
     }
     update(model) {
-        const sig = JSON.stringify({ ...model, history: model.history.kind === 'ready' ? [model.history.points.length, model.history.end] : model.history.kind });
+        const phaseSig = model.phases ? {
+            enabled: model.phases.enabled,
+            series: model.phases.series.map((s) => [s.label, s.history.kind === 'ready' ? [s.history.points.length, s.history.end] : s.history.kind]),
+        } : undefined;
+        const sig = JSON.stringify({ ...model, phases: phaseSig, history: model.history.kind === 'ready' ? [model.history.points.length, model.history.end] : model.history.kind });
         if (sig === this.signature)
             return;
         this.signature = sig;
@@ -3953,17 +4119,28 @@ class Popup {
         this.closeButton.setAttribute('aria-label', (0, i18n_1.t)('close', language));
         const big = (0, dom_1.html)('div', { class: 'popup-big' }, (0, dom_1.html)('span', { class: 'popup-value' }, model.valueText), (0, dom_1.html)('span', { class: 'popup-label' }, model.subtitle ?? (0, i18n_1.t)('current_power', language)));
         let graph;
-        switch (model.history.kind) {
-            case 'ready':
-                graph = buildGraph(model.history.points, model.history.start, model.history.end, model.powerFormat, language);
-                break;
-            case 'loading':
-                graph = (0, dom_1.html)('div', { class: 'popup-empty' }, (0, i18n_1.t)('loading', language));
-                break;
-            default:
-                graph = (0, dom_1.html)('div', { class: 'popup-empty' }, (0, i18n_1.t)('no_history', language));
+        if (model.phases?.enabled) {
+            graph = buildPhaseGraph(model.phases.series, model.powerFormat, language);
+        }
+        else {
+            switch (model.history.kind) {
+                case 'ready':
+                    graph = buildGraph(model.history.points, model.history.start, model.history.end, model.powerFormat, language);
+                    break;
+                case 'loading':
+                    graph = (0, dom_1.html)('div', { class: 'popup-empty' }, (0, i18n_1.t)('loading', language));
+                    break;
+                default:
+                    graph = (0, dom_1.html)('div', { class: 'popup-empty' }, (0, i18n_1.t)('no_history', language));
+            }
         }
         const graphBox = (0, dom_1.html)('section', { class: 'popup-section' }, (0, dom_1.html)('h3', {}, (0, i18n_1.t)('last_24h', language)), graph);
+        if (model.phases) {
+            const checkbox = (0, dom_1.html)('input', { type: 'checkbox' });
+            checkbox.checked = model.phases.enabled;
+            checkbox.addEventListener('change', () => model.phases?.onToggle(checkbox.checked));
+            graphBox.append((0, dom_1.html)('label', { class: 'phase-toggle' }, checkbox, (0, dom_1.html)('span', {}, (0, i18n_1.t)('show_phases', language)), (0, dom_1.html)('small', {}, (0, i18n_1.t)('phase_graph_hint', language))));
+        }
         const rows = (0, dom_1.html)('dl', { class: 'popup-rows' });
         for (const row of model.rows)
             rows.append((0, dom_1.html)('dt', {}, row.label), (0, dom_1.html)('dd', {}, row.value));

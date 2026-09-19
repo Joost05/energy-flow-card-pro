@@ -156,6 +156,18 @@ ha-card.fallback {
 .graph .area { fill: var(--c); opacity: 0.14; }
 .graph .zero { stroke: var(--divider-color, #cfcfcf); stroke-dasharray: 3 3; }
 .graph .axis { fill: var(--secondary-text-color, #727272); font-size: 10.5px; }
+.phase-trace { stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.phase-l1 { --phase-c: var(--efc-phase-l1, #42a5f5); }
+.phase-l2 { --phase-c: var(--efc-phase-l2, #ffb300); }
+.phase-l3 { --phase-c: var(--efc-phase-l3, #ab47bc); }
+.phase-trace.phase-l1, .phase-trace.phase-l2, .phase-trace.phase-l3 { stroke: var(--phase-c); }
+.phase-legend { display: flex; gap: 16px; align-items: center; justify-content: center; margin-top: 4px; font-size: 12px; color: var(--secondary-text-color, #727272); }
+.phase-key { display: inline-flex; align-items: center; gap: 6px; }
+.phase-key i { width: 16px; height: 3px; border-radius: 99px; background: var(--phase-c); display: inline-block; }
+.phase-toggle { display: grid; grid-template-columns: auto 1fr; column-gap: 10px; align-items: center; margin-top: 10px; cursor: pointer; }
+.phase-toggle input { width: 18px; height: 18px; grid-row: 1 / span 2; }
+.phase-toggle span { font-size: 14px; color: var(--primary-text-color); }
+.phase-toggle small { font-size: 12px; color: var(--secondary-text-color, #727272); }
 .popup-empty { padding: 22px 0; text-align: center; color: var(--secondary-text-color, #727272); font-size: 14px; }
 .popup-rows { display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; margin: 12px 0 0; font-size: 14px; }
 .popup-rows dt { color: var(--secondary-text-color, #727272); }

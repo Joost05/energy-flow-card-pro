@@ -15,3 +15,11 @@ test('locale language has priority over legacy language', () => {
   assert.equal(hassLanguage({ language: 'nl', locale: { language: 'en-GB' } }), 'en-GB');
   assert.equal(hassLanguage({ language: 'nl' }), 'nl');
 });
+
+
+test('phase graph labels are translated', () => {
+  assert.equal(t('show_phases', 'nl-NL'), 'Toon fasen');
+  assert.equal(t('show_phases', 'en-GB'), 'Show phases');
+  assert.equal(t('phase_l1_power', 'nl'), 'L1 vermogen');
+  assert.equal(t('phase_l1_power', 'en'), 'L1 power');
+});
