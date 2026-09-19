@@ -199,6 +199,19 @@ ha-card.fallback {
 .diagnostics-rows dt { color: var(--secondary-text-color, #727272); }
 .diagnostics-rows dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
 
+.replay-controls {
+  margin: 0 14px 14px; padding: 10px 12px 11px;
+  border: 1px solid var(--divider-color, #e0e0e0); border-radius: 12px;
+  background: color-mix(in srgb, var(--secondary-background-color, #f5f5f5) 55%, transparent);
+}
+.replay-controls.active { border-color: var(--primary-color, #03a9f4); }
+.replay-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 7px; }
+.replay-toggle { border: 0; border-radius: 999px; padding: 7px 12px; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; background: var(--secondary-background-color, #eee); color: var(--primary-text-color, #212121); }
+.replay-toggle.active { background: var(--primary-color, #03a9f4); color: var(--text-primary-color, #fff); }
+.replay-time { font-size: 13px; font-variant-numeric: tabular-nums; }
+.replay-slider { width: 100%; accent-color: var(--primary-color, #03a9f4); }
+.replay-hint { display: block; margin-top: 4px; color: var(--secondary-text-color, #727272); font-size: 11px; line-height: 1.35; }
+
 @media (max-width: 600px) {
   .stage { min-height: 0; padding-inline: 6px; }
   .popup { padding: 8px; }

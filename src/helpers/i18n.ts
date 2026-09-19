@@ -162,6 +162,12 @@ const nl: Record<string, string> = {
   diag_unmetered_consumption: "Overig / ongemeten verbruik",
   diag_consumers_over_home: "Verschil t.o.v. Woning",
   minutes_short: "min",
+  replay: "Historie",
+  replay_live: "Live",
+  replay_title: "Historische replay",
+  replay_loading: "Geschiedenis laden…",
+  replay_hint: "Sleep door de afgelopen 24 uur om de energiestromen van dat moment terug te kijken.",
+  replay_no_history: "Niet genoeg geschiedenis voor replay",
 };
 
 const en: Record<string, string> = {
@@ -327,6 +333,12 @@ const en: Record<string, string> = {
   diag_unmetered_consumption: "Other / unmetered consumption",
   diag_consumers_over_home: "Difference versus Home",
   minutes_short: "min",
+  replay: "Replay",
+  replay_live: "Live",
+  replay_title: "Historical replay",
+  replay_loading: "Loading history…",
+  replay_hint: "Scrub through the last 24 hours to replay the energy flows at that moment.",
+  replay_no_history: "Not enough history for replay",
 };
 
 /**

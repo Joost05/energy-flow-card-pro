@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.12.0
+
+- Added historical replay for the complete energy-flow diagram.
+- Added a 24-hour scrubber below the card to inspect earlier energy-flow states.
+- Nodes and connection directions/power update to the selected historical timestamp.
+- Added a one-click return to Live mode.
+- Replay reuses the existing bundled history cache and therefore does not add per-node API calls.
+- Popup values identify the selected replay time and hide live-only pricing/advanced values while replay is active.
+- Demo mode now supports replay as well.
+- Added Dutch and English replay labels.
+- Added replay helper tests.
+
 ## 0.11.0
 
 - Added live diagnostics to every node popup.

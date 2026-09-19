@@ -10,6 +10,7 @@ const DemoEngine_1 = require("../demo/DemoEngine");
 const diagnosticsHelper_1 = require("../helpers/diagnosticsHelper");
 const flowHelper_1 = require("../helpers/flowHelper");
 const historyHelper_1 = require("../helpers/historyHelper");
+const replayHelper_1 = require("../helpers/replayHelper");
 const i18n_1 = require("../helpers/i18n");
 const phaseHelper_1 = require("../helpers/phaseHelper");
 const pricingHelper_1 = require("../helpers/pricingHelper");
@@ -21,6 +22,7 @@ const ConnectionRenderer_1 = require("../renderer/ConnectionRenderer");
 const NodeRenderer_1 = require("../renderer/NodeRenderer");
 const PopupRenderer_1 = require("../renderer/PopupRenderer");
 const dom_1 = require("../renderer/dom");
+const EntityStatus_1 = require("../types/EntityStatus");
 const styles_1 = require("./styles");
 const HISTORY_HOURS = 24;
 const HISTORY_TTL_MS = 5 * 60_000;
@@ -41,6 +43,7 @@ class EnergyFlowCard extends HTMLElement {
         this.phaseHistory = new Map();
         this.phaseGraphEnabled = new Set();
         this.historyBundleFetchedAt = 0;
+        this.replayActive = false;
         this.demoStart = 0;
         this.reducedMotion = false;
         this.onMotionChange = (ev) => {
@@ -60,6 +63,9 @@ class EnergyFlowCard extends HTMLElement {
         this.cancelHistoryPreload();
         this.todayGridBalance = undefined;
         this.todayGridBalanceInFlight = undefined;
+        this.replayActive = false;
+        this.replayTimestamp = undefined;
+        this.replayControls = undefined;
         this.buildStructure();
         this.syncTimer();
         this.update();
@@ -131,6 +137,9 @@ class EnergyFlowCard extends HTMLElement {
             if (cfg.pricing.mode !== 'none')
                 stage.append(this.buildPriceBadge(cfg));
             stage.append(this.buildFlowSvg(cfg));
+            const replay = this.buildReplayControls();
+            this.replayControls = replay;
+            card.append(replay);
         }
         card.append(this.popup.el);
         root.replaceChildren((0, dom_1.html)('style', {}, styles_1.styles), card);
@@ -183,6 +192,123 @@ class EnergyFlowCard extends HTMLElement {
             nodeLayer.append(nodeEl.el);
         }
         return root;
+    }
+    buildReplayControls() {
+        const button = (0, dom_1.html)('button', { class: 'replay-toggle', type: 'button', 'data-replay-toggle': '' }, (0, i18n_1.t)('replay', this.language));
+        const time = (0, dom_1.html)('strong', { class: 'replay-time', 'data-replay-time': '' }, (0, i18n_1.t)('replay_live', this.language));
+        const slider = (0, dom_1.html)('input', {
+            class: 'replay-slider', type: 'range', min: '0', max: '1000', value: '1000', step: '1', disabled: '', 'data-replay-slider': '',
+            'aria-label': (0, i18n_1.t)('replay_title', this.language),
+        });
+        const hint = (0, dom_1.html)('span', { class: 'replay-hint', 'data-replay-hint': '' }, (0, i18n_1.t)('replay_hint', this.language));
+        const controls = (0, dom_1.html)('div', { class: 'replay-controls' }, (0, dom_1.html)('div', { class: 'replay-head' }, button, time), slider, hint);
+        button.addEventListener('click', () => void this.toggleReplay());
+        slider.addEventListener('input', () => this.onReplaySlider(Number(slider.value)));
+        this.updateReplayControls(controls);
+        return controls;
+    }
+    readyReplaySeries() {
+        const cfg = this.config;
+        if (!cfg)
+            return [];
+        const nodes = this.displayNodes.length ? this.displayNodes : cfg.nodes;
+        return nodes.flatMap((node) => {
+            const state = this.history.get(node.id)?.state;
+            return state?.kind === 'ready' && state.points.length > 1 ? [state.points] : [];
+        });
+    }
+    replayWindow() {
+        return (0, replayHelper_1.replayRange)(this.readyReplaySeries());
+    }
+    async toggleReplay() {
+        if (this.replayActive) {
+            this.replayActive = false;
+            this.replayTimestamp = undefined;
+            this.updateReplayControls();
+            this.update();
+            return;
+        }
+        const hint = this.replayControls?.querySelector('[data-replay-hint]');
+        if (hint)
+            hint.textContent = (0, i18n_1.t)('replay_loading', this.language);
+        if (this.config?.demo) {
+            const nodes = this.displayNodes.length ? this.displayNodes : this.config.nodes;
+            for (const node of nodes)
+                this.storeHistory(node, this.demoHistory(node));
+        }
+        else {
+            await this.ensureHistoryBundle();
+        }
+        const range = this.replayWindow();
+        if (!range) {
+            if (hint)
+                hint.textContent = (0, i18n_1.t)('replay_no_history', this.language);
+            this.updateReplayControls();
+            return;
+        }
+        this.replayActive = true;
+        this.replayTimestamp = range.end;
+        this.updateReplayControls();
+        this.update();
+    }
+    onReplaySlider(value) {
+        const range = this.replayWindow();
+        if (!range)
+            return;
+        this.replayActive = true;
+        this.replayTimestamp = range.start + (range.end - range.start) * Math.max(0, Math.min(1000, value)) / 1000;
+        this.updateReplayControls();
+        this.update();
+    }
+    updateReplayControls(root = this.replayControls) {
+        if (!root)
+            return;
+        const button = root.querySelector('[data-replay-toggle]');
+        const slider = root.querySelector('[data-replay-slider]');
+        const time = root.querySelector('[data-replay-time]');
+        const hint = root.querySelector('[data-replay-hint]');
+        const range = this.replayWindow();
+        if (button) {
+            button.textContent = this.replayActive ? (0, i18n_1.t)('replay_live', this.language) : (0, i18n_1.t)('replay', this.language);
+            button.classList.toggle('active', this.replayActive);
+        }
+        if (slider) {
+            slider.disabled = !range;
+            if (range && this.replayTimestamp !== undefined) {
+                slider.value = String(Math.round(((this.replayTimestamp - range.start) / (range.end - range.start)) * 1000));
+            }
+            else if (!this.replayActive)
+                slider.value = '1000';
+        }
+        if (time) {
+            time.textContent = this.replayActive && this.replayTimestamp !== undefined
+                ? new Date(this.replayTimestamp).toLocaleString(this.language || undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' })
+                : (0, i18n_1.t)('replay_live', this.language);
+        }
+        if (hint)
+            hint.textContent = range ? (0, i18n_1.t)('replay_hint', this.language) : (0, i18n_1.t)('replay_no_history', this.language);
+        root.classList.toggle('active', this.replayActive);
+    }
+    computeReplay() {
+        const cfg = this.config;
+        const timestamp = this.replayTimestamp;
+        if (!cfg || timestamp === undefined)
+            return undefined;
+        const nodes = this.displayNodes.length ? this.displayNodes : cfg.nodes;
+        const connections = this.displayConnections.length ? this.displayConnections : cfg.connections;
+        const readings = new Map();
+        for (const node of nodes) {
+            const state = this.history.get(node.id)?.state;
+            const point = state?.kind === 'ready' ? (0, replayHelper_1.nearestHistoryPoint)(state.points, timestamp) : undefined;
+            const watts = point?.v ?? null;
+            readings.set(node.id, {
+                status: watts === null ? EntityStatus_1.EntityStatus.Invalid : watts === 0 ? EntityStatus_1.EntityStatus.Zero : EntityStatus_1.EntityStatus.Valid,
+                watts,
+                charging: node.type === 'battery' ? (watts ?? 0) < 0 : node.type === 'ev_charger' ? (watts ?? 0) > 0 : false,
+            });
+        }
+        const flows = (0, flowHelper_1.computeFlows)(nodes, connections, readings, undefined, { ignoreEntities: true });
+        return { readings, flows, diagnostics: { byNode: new Map(), balanceDifferenceWatts: null, unmeteredConsumptionWatts: null } };
     }
     compute() {
         const cfg = this.config;
@@ -243,7 +369,7 @@ class EnergyFlowCard extends HTMLElement {
             return;
         if (cfg.demo && document.hidden)
             return;
-        this.computed = this.compute();
+        this.computed = this.replayActive ? (this.computeReplay() ?? this.compute()) : this.compute();
         this.updatePriceBadge();
         const ctx = { powerFormat: cfg.powerFormat, language: this.language };
         for (const node of (this.displayNodes.length ? this.displayNodes : cfg.nodes)) {
@@ -317,7 +443,7 @@ class EnergyFlowCard extends HTMLElement {
         const rows = [];
         if (reading.soc)
             rows.push({ label: (0, i18n_1.t)('soc', lang), value: view.socText ?? '?' });
-        if (node.groupMembers?.length) {
+        if (node.groupMembers?.length && !this.replayActive) {
             for (const memberId of node.groupMembers) {
                 const member = cfg.nodes.find((n) => n.id === memberId);
                 const memberReading = this.computed?.readings.get(memberId);
@@ -327,7 +453,7 @@ class EnergyFlowCard extends HTMLElement {
                 rows.push({ label: member.name ?? member.id, value });
             }
         }
-        if (!cfg.demo && !node.groupMembers?.length) {
+        if (!cfg.demo && !node.groupMembers?.length && !this.replayActive) {
             for (const field of (0, Node_1.advancedFieldsFor)(node.type)) {
                 if (field === 'soc_entity')
                     continue;
@@ -348,7 +474,7 @@ class EnergyFlowCard extends HTMLElement {
                 rows.push({ label, value: this.formatEntity(extra.entity) });
             }
         }
-        if (node.type === 'grid' && cfg.pricing.mode !== 'none') {
+        if (node.type === 'grid' && cfg.pricing.mode !== 'none' && !this.replayActive) {
             const prices = (0, pricingHelper_1.readPrices)(cfg.pricing, cfg.demo ? undefined : this._hass);
             if (prices.importPrice !== null)
                 rows.push({ label: (0, i18n_1.t)('current_import_price', lang), value: (0, pricingHelper_1.formatPrice)(prices.importPrice, cfg.pricing.currency, lang) });
@@ -379,7 +505,7 @@ class EnergyFlowCard extends HTMLElement {
         return {
             nodeType: node.type,
             title: view.displayName,
-            subtitle: view.subtitle,
+            subtitle: this.replayActive && this.replayTimestamp !== undefined ? `${(0, i18n_1.t)('replay_title', lang)} · ${new Date(this.replayTimestamp).toLocaleTimeString(lang || undefined, { hour: '2-digit', minute: '2-digit' })}` : view.subtitle,
             valueText: view.valueText,
             status: view.status,
             rows,
@@ -690,6 +816,7 @@ class EnergyFlowCard extends HTMLElement {
     storeHistory(node, state, fetchedAt = Date.now()) {
         this.history.set(node.id, { state, fetchedAt });
         this.writeHistorySession(node, state, fetchedAt);
+        this.updateReplayControls();
         this.refreshOpenPopup(node.id);
     }
     refreshOpenPopup(nodeId) {
@@ -1016,6 +1143,19 @@ ha-card.fallback {
 .diagnostics-rows { display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; margin: 8px 0 0; font-size: 13px; }
 .diagnostics-rows dt { color: var(--secondary-text-color, #727272); }
 .diagnostics-rows dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+
+.replay-controls {
+  margin: 0 14px 14px; padding: 10px 12px 11px;
+  border: 1px solid var(--divider-color, #e0e0e0); border-radius: 12px;
+  background: color-mix(in srgb, var(--secondary-background-color, #f5f5f5) 55%, transparent);
+}
+.replay-controls.active { border-color: var(--primary-color, #03a9f4); }
+.replay-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 7px; }
+.replay-toggle { border: 0; border-radius: 999px; padding: 7px 12px; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; background: var(--secondary-background-color, #eee); color: var(--primary-text-color, #212121); }
+.replay-toggle.active { background: var(--primary-color, #03a9f4); color: var(--text-primary-color, #fff); }
+.replay-time { font-size: 13px; font-variant-numeric: tabular-nums; }
+.replay-slider { width: 100%; accent-color: var(--primary-color, #03a9f4); }
+.replay-hint { display: block; margin-top: 4px; color: var(--secondary-text-color, #727272); font-size: 11px; line-height: 1.35; }
 
 @media (max-width: 600px) {
   .stage { min-height: 0; padding-inline: 6px; }
@@ -2777,6 +2917,12 @@ const nl = {
     diag_unmetered_consumption: "Overig / ongemeten verbruik",
     diag_consumers_over_home: "Verschil t.o.v. Woning",
     minutes_short: "min",
+    replay: "Historie",
+    replay_live: "Live",
+    replay_title: "Historische replay",
+    replay_loading: "Geschiedenis laden…",
+    replay_hint: "Sleep door de afgelopen 24 uur om de energiestromen van dat moment terug te kijken.",
+    replay_no_history: "Niet genoeg geschiedenis voor replay",
 };
 const en = {
     home: "Home",
@@ -2941,6 +3087,12 @@ const en = {
     diag_unmetered_consumption: "Other / unmetered consumption",
     diag_consumers_over_home: "Difference versus Home",
     minutes_short: "min",
+    replay: "Replay",
+    replay_live: "Live",
+    replay_title: "Historical replay",
+    replay_loading: "Loading history…",
+    replay_hint: "Scrub through the last 24 hours to replay the energy flows at that moment.",
+    replay_no_history: "Not enough history for replay",
 };
 function t(key, language) {
     const dictionary = language?.toLowerCase().startsWith('nl') ? nl : en;
@@ -3169,6 +3321,39 @@ async function fetchTodayExportRevenue(hass, exportEnergyEntity, pricing, now = 
 }
 
 },
+"src/helpers/replayHelper.js":function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.nearestHistoryPoint = nearestHistoryPoint;
+exports.replayRange = replayRange;
+function nearestHistoryPoint(points, timestamp) {
+    if (points.length === 0)
+        return undefined;
+    let lo = 0;
+    let hi = points.length - 1;
+    while (lo < hi) {
+        const mid = Math.floor((lo + hi) / 2);
+        if (points[mid].t < timestamp)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    const right = points[lo];
+    const left = lo > 0 ? points[lo - 1] : undefined;
+    if (!left)
+        return right;
+    return Math.abs(left.t - timestamp) <= Math.abs(right.t - timestamp) ? left : right;
+}
+function replayRange(series) {
+    const usable = series.filter((points) => points.length > 0);
+    if (usable.length === 0)
+        return undefined;
+    const start = Math.max(...usable.map((points) => points[0].t));
+    const end = Math.min(...usable.map((points) => points[points.length - 1].t));
+    return end > start ? { start, end } : undefined;
+}
+
+},
 "src/helpers/stateHelper.js":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
@@ -3272,7 +3457,7 @@ if (!window.customCards.some((c) => c.type === 'energy-flow-card')) {
         preview: true,
     });
 }
-console.info('%c ENERGY-FLOW-CARD-PRO %c 0.11.0 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
+console.info('%c ENERGY-FLOW-CARD-PRO %c 0.12.0 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
 
 },
 "src/layout/AutoLayout.js":function(require,module,exports){
