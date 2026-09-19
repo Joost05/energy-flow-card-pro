@@ -29,7 +29,7 @@ A custom Home Assistant Lovelace card for advanced live energy flows, device-lev
 
 ## Version history
 
-- **0.15.1** — Fixes the Live replay slider width and replaces free-form color picking with a curated preset palette.
+- **0.15.2** — Fixes the Live replay slider width and replaces free-form color picking with a curated preset palette.
 - **0.15.0** — Adds configurable energy-type colors, a compact replay scrubber with contextual Live button, and coalesced Home Assistant state rendering for larger dashboards.
 - **0.14.0** — Adds multi-level consumer branches with parent/child power flows, loop protection and hierarchy-aware layouts.
 - **0.13.0** — Adds Home energy/cost statistics for today, week and month, including import/export totals, net cost and self-consumption metrics.

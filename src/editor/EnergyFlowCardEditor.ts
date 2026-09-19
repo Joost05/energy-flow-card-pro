@@ -53,12 +53,17 @@ input[type="text"], input[type="number"], select {
   font: inherit; font-size: 14px; padding: 9px 10px; border-radius: 8px; box-sizing: border-box; width: 100%;
   border: 1px solid var(--divider-color, #ccc); background: var(--card-background-color, #fff); color: var(--primary-text-color);
 }
-.color-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 8px; }
-.color-field { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 9px; border: 1px solid var(--divider-color, #ddd); border-radius: 8px; font-size: 12px; }
-.color-choice { display: flex; align-items: center; gap: 7px; min-width: 0; }
-.color-swatch { width: 18px; height: 18px; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--primary-text-color) 25%, transparent); flex: 0 0 auto; }
-.color-field select { width: auto; min-width: 112px; padding: 6px 28px 6px 8px; font-size: 12px; }
+.color-grid { display: flex; flex-direction: column; gap: 8px; }
+.color-field { display: grid; grid-template-columns: minmax(110px, 145px) 1fr; align-items: center; gap: 10px; padding: 9px 10px; border: 1px solid var(--divider-color, #ddd); border-radius: 8px; font-size: 12px; }
+.color-palette { display: flex; align-items: center; justify-content: flex-start; gap: 5px; flex-wrap: wrap; min-width: 0; }
+.color-dot { width: 20px; height: 20px; padding: 0; border-radius: 50%; cursor: pointer; border: 2px solid transparent; box-sizing: border-box; flex: 0 0 auto; box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary-text-color) 22%, transparent); }
+.color-dot:hover { transform: scale(1.08); }
+.color-dot.selected { border-color: var(--primary-text-color); box-shadow: 0 0 0 2px var(--card-background-color, #fff), 0 0 0 3px var(--primary-text-color); }
+.color-dot.default { position: relative; background: var(--default-color); }
+.color-dot.default::after { content: ''; position: absolute; inset: 5px; border-radius: 50%; background: color-mix(in srgb, var(--card-background-color, #fff) 88%, transparent); }
+.color-dot.legacy { outline: 1px dashed var(--secondary-text-color); outline-offset: 2px; }
 .color-actions { display: flex; justify-content: flex-end; margin-top: 8px; }
+@media (max-width: 520px) { .color-field { grid-template-columns: 1fr; } }
 ha-entity-picker { width: 100%; }
 input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--primary-color, #03a9f4); outline-offset: 1px; }
 button.btn {
@@ -770,6 +775,7 @@ export class EnergyFlowCardEditor extends HTMLElement {
       ['consumer', 'color_consumer'], ['ev', 'color_ev'], ['backup', 'color_backup'], ['generator', 'color_generator'], ['producer', 'color_producer'],
     ];
     const isNl = lang === 'nl';
+    // Beperkte, vaste palette: genoeg keuze zonder vrije kleurkiezer of onoverzichtelijke selectvelden.
     const presets = [
       ['#ef5350', isNl ? 'Rood' : 'Red'],
       ['#ec407a', isNl ? 'Roze' : 'Pink'],
@@ -782,46 +788,64 @@ export class EnergyFlowCardEditor extends HTMLElement {
       ['#26a69a', isNl ? 'Turkoois' : 'Teal'],
       ['#66bb6a', isNl ? 'Groen' : 'Green'],
       ['#9ccc65', isNl ? 'Lichtgroen' : 'Light green'],
-      ['#d4e157', isNl ? 'Limoen' : 'Lime'],
       ['#ffca28', isNl ? 'Geel' : 'Yellow'],
       ['#ffa726', isNl ? 'Oranje' : 'Orange'],
-      ['#8d6e63', isNl ? 'Bruin' : 'Brown'],
-      ['#78909c', isNl ? 'Blauwgrijs' : 'Blue grey'],
       ['#9e9e9e', isNl ? 'Grijs' : 'Grey'],
     ] as const;
     const grid = html('div', { class: 'color-grid' });
+
+    const setColor = (key: keyof ColorConfig, value?: string) => {
+      if (!value || value.toLowerCase() === defaults[key].toLowerCase()) {
+        if (this.config.colors) {
+          delete this.config.colors[key];
+          if (Object.keys(this.config.colors).length === 0) delete this.config.colors;
+        }
+      } else {
+        if (!this.config.colors) this.config.colors = {};
+        this.config.colors[key] = value;
+      }
+      this.commit();
+      this.render();
+    };
+
     for (const [key, labelKey] of labels) {
       const current = this.config.colors?.[key];
-      const selected = !current || current.toLowerCase() === defaults[key].toLowerCase() ? '__default__' : current;
-      const select = html('select', { 'aria-label': t(labelKey, lang) }) as HTMLSelectElement;
-      select.append(html('option', { value: '__default__' }, isNl ? 'Standaard' : 'Default'));
-      for (const [value, name] of presets) select.append(html('option', { value }, name));
-      if (current && current !== defaults[key] && !presets.some(([value]) => value.toLowerCase() === current.toLowerCase())) {
-        select.append(html('option', { value: current }, isNl ? 'Bestaande aangepaste kleur' : 'Existing custom color'));
-      }
-      select.value = selected;
-      const swatch = html('span', { class: 'color-swatch', style: `background:${current ?? defaults[key]}` });
-      const updateSwatch = () => {
-        const value = select.value === '__default__' ? defaults[key] : select.value;
-        swatch.setAttribute('style', `background:${value}`);
-      };
-      select.addEventListener('change', () => {
-        if (select.value === '__default__') {
-          if (this.config.colors) {
-            delete this.config.colors[key];
-            if (Object.keys(this.config.colors).length === 0) delete this.config.colors;
-          }
-        } else {
-          if (!this.config.colors) this.config.colors = {};
-          this.config.colors[key] = select.value;
-        }
-        updateSwatch();
-        this.commit();
+      const currentValue = current?.toLowerCase();
+      const palette = html('div', { class: 'color-palette', role: 'radiogroup', 'aria-label': t(labelKey, lang) });
+
+      const defaultButton = html('button', {
+        class: `color-dot default${!current || currentValue === defaults[key].toLowerCase() ? ' selected' : ''}`,
+        type: 'button', role: 'radio',
+        'aria-checked': !current || currentValue === defaults[key].toLowerCase() ? 'true' : 'false',
+        'aria-label': `${t(labelKey, lang)} – ${isNl ? 'Standaard' : 'Default'}`,
+        title: isNl ? 'Standaardkleur' : 'Default color',
+        style: `--default-color:${defaults[key]}`,
       });
-      grid.append(html('label', { class: 'color-field' },
-        html('span', {}, t(labelKey, lang)),
-        html('span', { class: 'color-choice' }, swatch, select),
-      ));
+      defaultButton.addEventListener('click', () => setColor(key));
+      palette.append(defaultButton);
+
+      for (const [value, name] of presets) {
+        const selected = currentValue === value.toLowerCase();
+        const dot = html('button', {
+          class: `color-dot${selected ? ' selected' : ''}`,
+          type: 'button', role: 'radio', 'aria-checked': selected ? 'true' : 'false',
+          'aria-label': `${t(labelKey, lang)} – ${name}`, title: name, style: `background:${value}`,
+        });
+        dot.addEventListener('click', () => setColor(key, value));
+        palette.append(dot);
+      }
+
+      // Een kleur uit 0.15.0/0.15.1 blijft bruikbaar, maar er kunnen geen nieuwe vrije kleuren worden gekozen.
+      if (current && currentValue !== defaults[key].toLowerCase() && !presets.some(([value]) => value.toLowerCase() === currentValue)) {
+        const legacy = html('button', {
+          class: 'color-dot legacy selected', type: 'button', role: 'radio', 'aria-checked': 'true',
+          'aria-label': `${t(labelKey, lang)} – ${isNl ? 'Bestaande aangepaste kleur' : 'Existing custom color'}`,
+          title: isNl ? 'Bestaande aangepaste kleur' : 'Existing custom color', style: `background:${current}`,
+        });
+        palette.append(legacy);
+      }
+
+      grid.append(html('div', { class: 'color-field' }, html('span', {}, t(labelKey, lang)), palette));
     }
     const reset = html('button', { class: 'btn', type: 'button' }, t('colors_reset', lang));
     reset.addEventListener('click', () => { delete this.config.colors; this.commit(); this.render(); });

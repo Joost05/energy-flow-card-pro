@@ -1,3 +1,11 @@
+## [0.15.2] - 2026-09-19
+
+### Changed
+- Replaced the cramped color dropdown grid with a responsive swatch palette per energy type.
+- Color choices are now limited to a curated fixed palette plus each type's default color.
+- Existing custom colors from 0.15.0/0.15.1 remain readable for backwards compatibility, but the editor no longer offers arbitrary color entry.
+- Improved the color editor layout on narrow Home Assistant editor panels.
+
 # Changelog
 
 ## 0.15.1
