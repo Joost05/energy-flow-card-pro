@@ -29,5 +29,5 @@ jobs:
       - name: Publish release asset
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/energy-flow-card.js
+          files: dist/energy-flow-card-pro.js
           generate_release_notes: true

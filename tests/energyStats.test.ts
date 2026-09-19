@@ -14,7 +14,7 @@ test('demo energy stats expose positive usage and signed net cost', () => {
 test('period stats combine grid, solar and battery energy counters', async () => {
   const now = new Date('2026-09-19T12:00:00+02:00').getTime();
   const cfg = normalizeConfig({
-    type: 'custom:energy-flow-card',
+    type: 'custom:energy-flow-card-pro',
     pricing: { mode: 'none' },
     nodes: [
       { name: 'Net', type: 'grid', energy_import_entity: 'sensor.imp', energy_export_entity: 'sensor.exp' },

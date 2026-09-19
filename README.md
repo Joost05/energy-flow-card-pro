@@ -29,6 +29,7 @@ A custom Home Assistant Lovelace card for advanced live energy flows, device-lev
 
 ## Version history
 
+- **0.17.0** — Aligns the technical identifiers with the public name: `custom:energy-flow-card-pro` and `energy-flow-card-pro.js`. This is a one-time breaking rename before 1.0.
 - **0.16.0** — Adds mobile focus navigation for large hierarchies, reliable touch-drag graph inspection, and a more compact replay control.
 
 - **0.15.2** — Fixes the Live replay slider width and replaces free-form color picking with a curated preset palette.
@@ -68,7 +69,7 @@ A custom Home Assistant Lovelace card for advanced live energy flows, device-lev
 
 ### v0.9.2
 
-- Renamed the public product/HACS/package branding to **Energy Flow Card Pro** while keeping `custom:energy-flow-card` for backward compatibility.
+- Public branding is **Energy Flow Card Pro**. Starting with v0.17.0, the technical card type and resource filename also use the `-pro` suffix to avoid confusion with similarly named projects.
 - Replaced the compact arrow-only price badge with a clearer two-part **Import / Export** price panel.
 - Kept price values compact at two decimals and made the price panel responsive on narrow cards.
 - Fixed wizard step-number alignment so all four steps keep the number and label on one horizontal line.
@@ -183,23 +184,27 @@ For a private development repository, install the built file manually until the 
 
 ## Manual installation
 
-Copy `dist/energy-flow-card.js` to:
+Copy `dist/energy-flow-card-pro.js` to:
 
 ```text
-/config/www/energy-flow-card/energy-flow-card.js
+/config/www/energy-flow-card-pro/energy-flow-card-pro.js
 ```
 
 Add the following dashboard resource as a JavaScript module:
 
 ```text
-/local/energy-flow-card/energy-flow-card.js
+/local/energy-flow-card-pro/energy-flow-card-pro.js
 ```
 
 Then add the card:
 
 ```yaml
-type: custom:energy-flow-card
+type: custom:energy-flow-card-pro
 ```
+
+### Migrating from v0.16.x or older
+
+Before v0.17.0 the resource was named `energy-flow-card.js` and the card type was `custom:energy-flow-card`. Because the project had not yet reached a public 1.0 release, v0.17.0 performs a one-time rename to avoid naming confusion. Remove the old dashboard resource, install/load `energy-flow-card-pro.js`, and change existing cards to `type: custom:energy-flow-card-pro`.
 
 ## Energy pricing
 
@@ -297,7 +302,7 @@ Groups do not replace the underlying devices. They only change how those devices
 Use `display: grouped` to show one combined node, or `display: individual` to keep all group members visible separately.
 
 ```yaml
-type: custom:energy-flow-card
+type: custom:energy-flow-card-pro
 nodes:
   - id: heat_pump_1
     name: Heat pump 1
@@ -377,7 +382,7 @@ npm install
 npm run check
 ```
 
-The production bundle is written to `dist/energy-flow-card.js`.
+The production bundle is written to `dist/energy-flow-card-pro.js`.
 
 ## License
 

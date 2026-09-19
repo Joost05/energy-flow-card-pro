@@ -1,3 +1,15 @@
+# Changelog
+
+## [0.17.0] - 2026-09-20
+
+### Changed
+- Renamed the production bundle from `energy-flow-card.js` to `energy-flow-card-pro.js`.
+- Renamed the Lovelace card type from `custom:energy-flow-card` to `custom:energy-flow-card-pro`.
+- Renamed the editor custom element to `energy-flow-card-pro-editor`.
+- Updated HACS metadata and the GitHub release workflow to publish `energy-flow-card-pro.js`.
+- Updated manual-install paths, examples and migration guidance.
+- This is an intentional one-time breaking technical rename before the public 1.0 release, to keep the project name unambiguous.
+
 ## [0.16.0] - 2026-09-20
 
 ### Added

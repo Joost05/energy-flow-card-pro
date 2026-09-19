@@ -100,7 +100,7 @@ function stable(value: unknown): string {
  * wie liever direct YAML schrijft, kan de wizard gewoon overslaan.
  */
 export class EnergyFlowCardEditor extends HTMLElement {
-  private config: CardConfig = { type: 'custom:energy-flow-card', nodes: [] };
+  private config: CardConfig = { type: 'custom:energy-flow-card-pro', nodes: [] };
   private step: Step = 1;
   private _hass?: Hass;
   private lastEmitted = '';
@@ -894,7 +894,7 @@ export class EnergyFlowCardEditor extends HTMLElement {
       this.render();
     });
 
-    const card = document.createElement('energy-flow-card') as HTMLElement & { hass?: Hass; setConfig(c: unknown): void };
+    const card = document.createElement('energy-flow-card-pro') as HTMLElement & { hass?: Hass; setConfig(c: unknown): void };
     try {
       card.setConfig(this.config);
     } catch (err) {

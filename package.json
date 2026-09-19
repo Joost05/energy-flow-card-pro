@@ -1,10 +1,10 @@
 {
   "name": "energy-flow-card-pro",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "description": "Energy Flow Card Pro for Home Assistant: live energy flows, hierarchical consumers, replay, diagnostics, configurable colors and electricity pricing.",
   "private": true,
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --minify --format=esm --target=es2021 --outfile=dist/energy-flow-card.js",
+    "build": "esbuild src/index.ts --bundle --minify --format=esm --target=es2021 --outfile=dist/energy-flow-card-pro.js",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "check": "npm run typecheck && npm test && npm run build"

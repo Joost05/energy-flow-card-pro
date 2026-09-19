@@ -32,7 +32,7 @@ describe('normalizeType', () => {
 
 describe('normalizeConfig', () => {
   const basis = {
-    type: 'custom:energy-flow-card',
+    type: 'custom:energy-flow-card-pro',
     nodes: [
       { name: 'Zonnepanelen', type: 'solar', power_entity: 'sensor.pv_power' },
       { name: 'Batterij', type: 'battery', power_entity: 'sensor.battery_power' },

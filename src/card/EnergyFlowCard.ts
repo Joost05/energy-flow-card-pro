@@ -138,7 +138,7 @@ export class EnergyFlowCard extends HTMLElement {
   }
 
   static getConfigElement(): HTMLElement {
-    return document.createElement('energy-flow-card-editor');
+    return document.createElement('energy-flow-card-pro-editor');
   }
 
   connectedCallback(): void {
