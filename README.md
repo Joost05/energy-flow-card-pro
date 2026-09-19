@@ -1,15 +1,20 @@
 # Energy Flow Card
 
-A custom Home Assistant Lovelace card for visualising live energy flows between the grid, solar, battery, home and individual consumers.
+A custom Home Assistant Lovelace card for visualizing live energy flows between the grid, solar, batteries, home, backup supply, device groups and individual consumers.
 
 ## Features
 
 - Live animated energy flows
 - Flow, round and straight layouts
-- Optional device groups with a live summed power node or individual display
-- Icon dropdown with common presets plus a custom `mdi:` option
-- Optional home power sensor or automatic home calculation with reconstructed 24-hour history
-- Detail popup with 24-hour graph, peak/average power and extra measurements
+- Adaptive Flow layout that sizes itself to the actual content
+- Automatic multi-row wrapping for larger installations
+- Compact backup-device grids
+- Optional device groups with summed live power or individual display
+- Group detail popups with member values and 24-hour history
+- Icon dropdown with common MDI presets plus a custom `mdi:` option
+- Optional Home power sensor or automatic Home calculation with reconstructed 24-hour history
+- Detail popup with 24-hour graph, peak power, peak time, average power and extra measurements
+- Background history preloading and caching for fast popup graphs
 - Home Assistant entity pickers in the visual editor
 - Dutch and English UI, following the active Home Assistant frontend language
 - Light and dark theme support through Home Assistant theme variables
@@ -18,41 +23,51 @@ A custom Home Assistant Lovelace card for visualising live energy flows between 
 
 ## Version history
 
+### v0.8.3
+
+- Standardized the public project documentation to English.
+- Reworked the README so HACS/GitHub users get one consistent installation and feature reference.
+- Converted all previously Dutch release notes in `CHANGELOG.md` to English.
+- Kept the Home Assistant card UI bilingual; Dutch and English still follow each user's frontend language automatically.
+- No configuration migration is required from v0.8.2.
+
 ### v0.8.2
 
-- Added optional device groups: combine for example two heat pumps into one node with their summed live power, or switch the group back to individual display.
-- Group popups list the individual member powers and use the same 24-hour history system.
+- Added optional device groups. Multiple devices can be combined into one node with summed live power, or shown individually.
+- Group popups list each member's live power and use the same 24-hour history engine as regular nodes.
 - Added an icon dropdown with common Home Assistant/MDI presets and a **Custom…** option for any other `mdi:` icon.
 - Replaced the old shield-style Backup glyph with a generator/alternator-style default icon.
-- Backup consumers now use a compact responsive grid (up to three columns) instead of one very tall vertical stack.
-- Grouping and icon controls follow the active Dutch/English Home Assistant language.
+- Backup consumers now use a compact responsive grid of up to three columns instead of one long vertical stack.
+- Added Dutch and English translations for groups and the icon selector.
 
 ### v0.8.1
-- Echt inhoudsgestuurde kaarthoogte zonder vaste minimumhoogte.
-- Backup-takken hebben een eigen kolom en hun verbruikers worden verticaal gestapeld.
-- Compactere boven- en ondermarges.
 
+- Removed the fixed minimum card height so the Flow layout truly follows its content.
+- Reduced the maximum top and bottom spacing around nodes.
+- Moved backup branches into their own column so their connections do not pass through normal consumers.
+- Kept the regular-consumer wrapping introduced in v0.8.0.
 
 ### v0.8.0
-- Adaptive Flow layout that sizes the card to its actual contents.
-- Maximum outer spacing above and below the nodes, removing large empty areas.
-- Smart wrapping: large sets of consumers are automatically split over multiple rows.
-- Backup clusters stay together with their downstream devices.
-- Flow layout remains responsive on desktop, tablet and mobile.
+
+- Added adaptive sizing to the default Flow layout.
+- Removed fixed Flow canvas heights; the card now fits the actual nodes with bounded top/bottom margins.
+- Added automatic multi-row wrapping for large numbers of consumers, with a maximum of five slots per row.
+- Kept backup nodes and their downstream devices together as layout clusters.
+- Added regression tests for compact height, wrapping and backup clusters.
 
 ### v0.7.5
 
-- 24-hour history preload now starts immediately in the background when the card becomes visible.
-- Frequent Home Assistant state updates no longer cancel and restart the preload timer, preventing history loading from being postponed indefinitely.
-- Valid session-cached graphs for all nodes are restored as soon as the card loads, so dashboard navigation and refreshes can show graphs immediately.
-- The existing five-minute memory/session cache and bundled history request remain in place.
+- Started the bundled 24-hour history preload immediately in the background when the card becomes visible.
+- Prevented frequent Home Assistant state updates from repeatedly postponing history preloading.
+- Restored valid session-cached graphs for all nodes as soon as the card loads.
+- Kept the bundled history request, five-minute cache, 96-point graphs and calculated Home history.
 
 ### v0.7.4
 
 - Replaced separate node history requests with one bundled Home Assistant history request.
-- Reconstructs all node values on one shared 96-point timeline.
-- Added a calculated 24-hour history graph for **Home**, even when Home has no dedicated power sensor.
-- Added peak power, peak time and average power to the detail popup.
+- Reconstructed all node values on one shared 96-point timeline.
+- Added a calculated 24-hour history graph for **Home**, even without a dedicated Home power sensor.
+- Added peak power, peak time and average power to detail popups.
 
 ### v0.7.3
 
@@ -82,7 +97,7 @@ A custom Home Assistant Lovelace card for visualising live energy flows between 
 - Added optional measured Home power with automatic Home calculation as fallback.
 - Improved handling of unknown/unavailable sensors and compacted the node presentation.
 
-For the full technical list, see [`CHANGELOG.md`](CHANGELOG.md).
+For the full technical release history, see [`CHANGELOG.md`](CHANGELOG.md).
 
 ## HACS installation
 
@@ -90,12 +105,12 @@ Until this repository is added to the HACS default store, add it as a custom rep
 
 1. Open HACS in Home Assistant.
 2. Open **Custom repositories**.
-3. Add the repository URL.
-4. Select **Dashboard** as category.
+3. Add the GitHub repository URL.
+4. Select **Dashboard** as the category.
 5. Install **Energy Flow Card**.
 6. Reload the browser if Home Assistant asks you to.
 
-For private development repositories, install the built file manually until the repository is publicly accessible to HACS.
+For a private development repository, install the built file manually until the repository is publicly accessible to HACS.
 
 ## Manual installation
 
@@ -105,7 +120,7 @@ Copy `dist/energy-flow-card.js` to:
 /config/www/energy-flow-card/energy-flow-card.js
 ```
 
-Add this dashboard resource as a JavaScript module:
+Add the following dashboard resource as a JavaScript module:
 
 ```text
 /local/energy-flow-card/energy-flow-card.js
@@ -117,30 +132,55 @@ Then add the card:
 type: custom:energy-flow-card
 ```
 
-## Optional groups
+## Optional device groups
 
-Groups do not replace the underlying devices. They only control how those devices are displayed. Set `display: grouped` for one total node or `display: individual` to keep the members separate.
+Groups do not replace the underlying devices. They only change how those devices are presented.
+
+Use `display: grouped` to show one combined node, or `display: individual` to keep all group members visible separately.
 
 ```yaml
 type: custom:energy-flow-card
 nodes:
-  - id: wp_1
+  - id: heat_pump_1
     name: Heat pump 1
     type: heat_pump
-    power_entity: sensor.wp_1_power
-  - id: wp_2
+    power_entity: sensor.heat_pump_1_power
+  - id: heat_pump_2
     name: Heat pump 2
     type: heat_pump
-    power_entity: sensor.wp_2_power
+    power_entity: sensor.heat_pump_2_power
 groups:
   - id: heat_pumps
     name: Heat pumps
     icon: mdi:heat-pump
     display: grouped
     members:
-      - wp_1
-      - wp_2
+      - heat_pump_1
+      - heat_pump_2
 ```
+
+The grouped node shows the summed live power. Opening the group popup shows the individual member values and the combined history.
+
+## Icons
+
+The visual editor provides a dropdown with common icons for solar, batteries, heat pumps, air conditioning, EV charging, appliances, computers, servers, lighting, pumps, sockets, backup power and more.
+
+Choose **Custom…** to enter any supported Material Design Icons value, for example:
+
+```text
+mdi:coffee-maker
+```
+
+## Languages
+
+The card automatically follows the active Home Assistant frontend language for each user.
+
+Currently supported:
+
+- English
+- Dutch
+
+Device names entered by the user are never translated automatically.
 
 ## Development
 

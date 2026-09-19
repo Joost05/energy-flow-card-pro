@@ -1,90 +1,97 @@
 # Changelog
 
+## 0.8.3
+
+- Standardized the public README and changelog to English for a consistent HACS/GitHub project experience.
+- Rewrote all historical Dutch release notes in English without changing their technical meaning.
+- Updated package metadata and the runtime version banner to **0.8.3**.
+- Kept all existing v0.8.2 configuration compatible; no migration is required.
+
 ## 0.8.2
 
-- Optionele apparaatgroepen toegevoegd. Een groep kan als één totaalnode worden weergegeven of de leden individueel laten staan.
-- Groepsvermogen wordt live opgeteld uit de onderliggende apparaten; de popup toont de afzonderlijke leden.
-- Groepshistorie gebruikt dezelfde gebundelde 24-uurs history-engine als gewone nodes.
-- Icoonveld vervangen door een dropdown met veelgebruikte presets en een vrije **Aangepast…** `mdi:`-optie.
-- Standaard Backup-icoon gewijzigd van schild/bliksem naar een generator/alternator-symbool.
-- Backup-verbruikers worden automatisch in een compact raster van maximaal drie kolommen geplaatst in plaats van één lange verticale stack.
-- Nederlandse en Engelse vertalingen toegevoegd voor groepen en de icoonkiezer.
-- Nieuwe regressietests voor groepen, groepsvermogen en het backup-raster.
+- Added optional device groups. A group can be displayed as one combined node or keep its members visible individually.
+- Group power is summed live from the underlying devices; the popup lists each individual member.
+- Group history uses the same bundled 24-hour history engine as regular nodes.
+- Replaced the free-form icon field with a dropdown of common presets plus a **Custom…** `mdi:` option.
+- Changed the default Backup icon from a shield/lightning symbol to a generator/alternator-style symbol.
+- Placed backup consumers in a compact grid of up to three columns instead of one long vertical stack.
+- Added Dutch and English translations for groups and the icon selector.
+- Added regression tests for groups, group power and the backup grid.
 
 ## 0.8.1
 
-- Verwijderd vaste minimale kaarthoogte; Flow-layout past nu echt op de inhoud.
-- Kleinere maximale boven- en ondermarge rond de nodes.
-- Backup-takken krijgen een eigen kolom zodat verbindingen niet door gewone verbruikers lopen.
-- Apparaten achter een backup worden verticaal onder elkaar gestapeld.
-- Bestaande 0.8 wrapping van maximaal vijf gewone verbruikers per rij blijft behouden.
+- Removed the fixed minimum card height so the Flow layout now truly follows its content.
+- Reduced the maximum top and bottom margin around nodes.
+- Gave backup branches their own column so connections no longer pass through regular consumers.
+- Initially stacked devices behind a backup vertically.
+- Preserved the v0.8 wrapping of up to five regular consumers per row.
 
 ## 0.8.0
 
 - Added adaptive sizing to the default Flow layout.
 - Removed fixed Flow canvas heights; the card now fits the actual nodes with bounded top/bottom margins.
-- Added automatic multi-row wrapping for large numbers of consumers (maximum five slots per row).
-- Backup nodes and their downstream consumers are kept together as layout clusters.
+- Added automatic multi-row wrapping for large numbers of consumers, with a maximum of five slots per row.
+- Kept backup nodes and their downstream consumers together as layout clusters.
 - Updated Flow layout labels in Dutch and English.
 - Added regression tests for compact height, wrapping and backup clusters.
 
-## v0.7.5
+## 0.7.5
 
-- De gezamenlijke 24-uurs history-load start nu direct op de achtergrond zodra de kaart zichtbaar is, in plaats van pas na een wachttijd.
-- Home Assistant zet `hass` opnieuw bij vrijwel iedere state-update. Die updates annuleren de preload niet langer; daardoor kan een snel wijzigende vermogenssensor de history-load niet meer eindeloos uitstellen.
-- Geldige `sessionStorage`-grafieken van alle nodes worden bij het laden van de kaart direct teruggezet, zodat navigeren of refreshen binnen de cacheperiode meteen grafieken kan tonen.
-- De bestaande gebundelde history-call, vijf-minuten-cache, 96-puntsgrafieken en berekende Woning-historie blijven behouden.
-- README uitgebreid met een overzicht van alle releases vanaf v0.7.0.
-- Versienummer bijgewerkt naar **0.7.5**.
+- Started the bundled 24-hour history load immediately in the background when the card becomes visible instead of waiting for a delay.
+- Prevented frequent Home Assistant `hass` state updates from cancelling and restarting the preload timer.
+- Restored valid `sessionStorage` graph data for all nodes immediately when the card loads.
+- Preserved the bundled history request, five-minute cache, 96-point graphs and calculated Home history.
+- Expanded the README with a release overview starting at v0.7.0.
+- Updated the version to **0.7.5**.
 
-## v0.7.4
+## 0.7.4
 
-- Alle 24-uurs vermogenshistorie wordt nu met één gebundelde Home Assistant history-request opgehaald in plaats van één request per node.
-- Alle nodes worden op dezelfde 96 tijdstippen opnieuw berekend met dezelfde flowlogica als de live kaart.
-- **Woning** krijgt nu ook zonder eigen vermogenssensor een echte 24-uursgrafiek, opgebouwd uit de historische energiestromen.
-- Ongemeten backup-nodes en batterijen met losse laad-/ontlaadsensoren kunnen eveneens historische grafieken krijgen via de gezamenlijke berekening.
-- Detailpopups tonen bij beschikbare historie nu piekvermogen, tijdstip van de piek en gemiddeld vermogen over de grafiekperiode.
-- De bestaande geheugen- en `sessionStorage`-cache blijft behouden; na de eerste gezamenlijke laadactie openen alle nodegrafieken direct.
-- Versienummer bijgewerkt naar **0.7.4**.
+- Replaced individual node history requests with one bundled Home Assistant history request.
+- Recalculated all nodes on the same 96 historical timestamps using the same flow logic as the live card.
+- Added a real 24-hour **Home** graph even when Home has no dedicated power sensor, reconstructed from historical energy flows.
+- Added historical support for unmeasured backup nodes and batteries with separate charge/discharge sensors.
+- Added peak power, peak time and average power to detail popups when history is available.
+- Preserved the memory and `sessionStorage` cache so all node graphs open immediately after the first bundled load.
+- Updated the version to **0.7.4**.
 
-## v0.7.3
+## 0.7.3
 
-- 24-uursgrafieken laden merkbaar sneller door compactere Home Assistant history-requests met `significant_changes_only`.
-- Grafiekdata wordt vijf minuten in het geheugen gecachet en daarnaast tijdelijk in `sessionStorage`, zodat opnieuw openen en terugnavigeren vrijwel direct is.
-- Dubbele gelijktijdige history-requests voor dezelfde node worden samengevoegd.
-- Tot acht veelgebruikte vermogensgrafieken worden na het laden van de kaart rustig op de achtergrond voorverwarmd, met maximaal twee requests tegelijk.
-- De grafiek blijft gereduceerd tot 96 punten over 24 uur; de kaart hoeft daardoor nooit duizenden ruwe meetpunten te tekenen.
-- Extra tests toegevoegd voor history-query en bucketisering.
-- GitHub releaseworkflow gecorrigeerd zodat een repository zonder `package-lock.json` ook correct kan bouwen bij een tag-release.
-- Versienummer bijgewerkt naar **0.7.3**.
+- Improved 24-hour graph loading using more compact Home Assistant history requests with `significant_changes_only`.
+- Cached graph data for five minutes in memory and in `sessionStorage` so reopening and navigating back are effectively instant.
+- Merged duplicate concurrent history requests for the same node.
+- Preloaded up to eight commonly used power graphs after card load with a maximum of two concurrent requests.
+- Reduced graph rendering data to 96 points over 24 hours.
+- Added history-query and bucketization tests.
+- Fixed the GitHub release workflow so repositories without a `package-lock.json` can still build on tag releases.
+- Updated the version to **0.7.3**.
 
-## v0.7.2
+## 0.7.2
 
-- Kaart iets ruimer gemaakt: grotere standaard rasterhoogte, meer interne ruimte en een grotere maximale flowbreedte.
-- Detailpopup staat nu als viewport-overlay boven Home Assistant in plaats van opgesloten in de kaart. Daardoor blijft hij volledig zichtbaar wanneer veel geavanceerde meetwaarden zijn ingesteld.
-- Popup is responsief op desktop en mobiel en krijgt een eigen maximale hoogte met scrollen wanneer nodig.
-- Taal volgt nu expliciet de actieve Home Assistant frontendtaal per gebruiker/persoon. `hass.locale.language` wordt gebruikt met `hass.language` als fallback.
-- Nederlandse en Engelse teksten gelden voor kaart, editor, statussen, popup, grafiek en veldnamen.
-- HACS-ready repositorystructuur toegevoegd met README, LICENSE, `hacs.json` en GitHub Actions releaseworkflow.
-- Versienummer bijgewerkt naar **0.7.2**.
+- Increased the default card/grid space and maximum flow width.
+- Moved the detail popup to a responsive viewport overlay above Home Assistant so it is not clipped when many advanced values are configured.
+- Added a responsive maximum popup height with scrolling on desktop and mobile.
+- Made the language explicitly follow each user's active Home Assistant frontend language using `hass.locale.language` with `hass.language` as fallback.
+- Applied Dutch and English translations across the card, editor, statuses, popup, graph and field names.
+- Added a HACS-ready repository structure with README, LICENSE, `hacs.json` and GitHub Actions release workflow.
+- Updated the version to **0.7.2**.
 
-## v0.7.1
+## 0.7.1
 
-- De standaard energiestroomweergave heet voortaan **Flow**; merk-/productvergelijkingen zijn uit de interface en documentatie verwijderd.
-- Bestaande v0.7.0-configuraties met de oude layoutwaarde blijven automatisch werken en worden intern als **Flow** behandeld.
-- Verbruikers tonen onder **Geavanceerd** nu relevante meetwaarden: spanning, stroom, vandaag verbruikt en totaal verbruikt.
-- Dezelfde verbruiksvelden zijn beschikbaar voor laadpaal, warmtepomp, boiler, airco en backup.
-- Extra meetwaarden blijven uit de hoofdweergave en verschijnen alleen in de detailpopup wanneer je op een node klikt.
-- Productievelden voor zonnepanelen/producenten blijven als productie gelabeld.
-- Versienummer bijgewerkt naar **0.7.1**.
+- Renamed the default energy-flow view to **Flow** and removed product/brand comparisons from the interface and documentation.
+- Kept old v0.7.0 layout values compatible by treating them internally as **Flow**.
+- Added consumer-oriented advanced measurements: voltage, current, consumed today and total consumed.
+- Added the same consumption fields for EV chargers, heat pumps, boilers, air conditioning and backup devices.
+- Kept extra measurements out of the main diagram and showed them only in the detail popup.
+- Kept solar/producer energy fields labelled as production.
+- Updated the version to **0.7.1**.
 
-## v0.7.0
+## 0.7.0
 
-- Nieuwe **Flow** energiestroom-layout als standaardweergave: productie boven, net links, opslag rechts en verbruikers onder de woning.
-- Home Assistant `ha-entity-picker` voor vermogens- en sensorsvelden; dropdowns blijven open tijdens zoeken/selecteren.
-- Naamvelden worden pas naar Home Assistant gecommit na afronden van de invoer, zodat volledige namen behouden blijven.
-- Optionele eigen vermogenssensor voor **Woning** (`home_power_entity`); zonder sensor blijft de woning automatisch berekend.
-- Onbekende losse bron/apparaatsensoren maken de volledige berekende woningwaarde niet meer automatisch ongeldig zolang er bruikbare energiestromen overblijven.
-- Compactere nodes en duidelijkere flowlijnen in de Flow weergave.
-- Bestaande `circle` en `straight` layouts blijven beschikbaar.
-- Versienummer bijgewerkt naar **0.7.0**.
+- Introduced the **Flow** layout as the default view: production above, grid left, storage right and consumers below Home.
+- Replaced unstable datalists with Home Assistant `ha-entity-picker` controls for power and sensor fields.
+- Committed device names only after text editing is completed so full names are preserved.
+- Added an optional dedicated Home power sensor (`home_power_entity`) with automatic Home calculation as fallback.
+- Prevented isolated unknown source/device readings from invalidating the entire calculated Home value while useful energy flows remain.
+- Made nodes more compact and flow lines clearer in Flow mode.
+- Kept the existing `circle` and `straight` layouts available.
+- Updated the version to **0.7.0**.

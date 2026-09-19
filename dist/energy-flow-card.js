@@ -2536,7 +2536,7 @@ if (!window.customCards.some((c) => c.type === 'energy-flow-card')) {
         preview: true,
     });
 }
-console.info('%c ENERGY-FLOW-CARD %c 0.8.2 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
+console.info('%c ENERGY-FLOW-CARD %c 0.8.3 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
 
 };
 __modules["src/layout/AutoLayout.ts"] = function(require, module, exports) {
