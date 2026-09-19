@@ -1,3 +1,16 @@
+## [0.16.0] - 2026-09-20
+
+### Added
+- Added an automatic compact mobile focus view below 700 px: Home shows only its direct branches, and branches with children can be opened one level at a time.
+- Added breadcrumb/back navigation for nested consumer and backup branches on phones and narrow tablets.
+- Added regression tests for mobile focus graph filtering.
+
+### Changed
+- Fixed graph inspection on phones and tablets by using pointer capture while dragging; the marker and tooltip now continuously follow the finger.
+- Prevented page scrolling from stealing an active graph drag gesture.
+- Made the replay control more compact: Live mode shows `Replay + slider`; historical mode shows `time + slider + Live` on one row.
+- Desktop keeps the full energy tree; the mobile focus view does not change calculations, history, replay or diagnostics.
+
 ## [0.15.2] - 2026-09-19
 
 ### Changed

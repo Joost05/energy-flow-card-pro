@@ -131,6 +131,7 @@ function attachInspector(
   root.append(marker, ...dots, tooltip, hit);
 
   let locked = false;
+  let draggingPointer: number | undefined;
   let lastX = PAD.l;
   const xFor = (ms: number) => PAD.l + ((ms - start) / Math.max(1, end - start)) * (W - PAD.l - PAD.r);
 
@@ -216,16 +217,29 @@ function attachInspector(
   };
 
   hit.addEventListener('pointermove', (ev) => {
-    if (locked && ev.pointerType !== 'mouse') return;
+    if (ev.pointerType !== 'mouse') {
+      if (draggingPointer !== ev.pointerId) return;
+      ev.preventDefault();
+    }
     updateAt(svgXFromPointer(ev));
   });
   hit.addEventListener('pointerdown', (ev) => {
     ev.preventDefault();
     locked = true;
+    draggingPointer = ev.pointerId;
+    try { hit.setPointerCapture(ev.pointerId); } catch { /* older webviews */ }
     updateAt(svgXFromPointer(ev));
   });
-  hit.addEventListener('pointerleave', () => {
-    if (!locked) hide();
+  const finishPointer = (ev: PointerEvent): void => {
+    if (draggingPointer !== ev.pointerId) return;
+    try { if (hit.hasPointerCapture(ev.pointerId)) hit.releasePointerCapture(ev.pointerId); } catch { /* ignore */ }
+    draggingPointer = undefined;
+  };
+  hit.addEventListener('pointerup', finishPointer);
+  hit.addEventListener('pointercancel', finishPointer);
+  hit.addEventListener('pointerleave', (ev) => {
+    if (ev.pointerType !== 'mouse' || locked) return;
+    hide();
   });
   hit.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape') {

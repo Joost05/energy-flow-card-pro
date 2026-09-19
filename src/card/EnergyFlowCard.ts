@@ -10,6 +10,7 @@ import {
 } from '../helpers/flowHelper';
 import { HistoryPoint, bucketize, fetchHistoryBatch } from '../helpers/historyHelper';
 import { nearestHistoryPoint, replayRange } from '../helpers/replayHelper';
+import { buildMobileFocusGraph, hasFocusableChildren } from '../helpers/mobileFocusHelper';
 import { hassLanguage, t } from '../helpers/i18n';
 import { deriveL1History, deriveL1Power } from '../helpers/phaseHelper';
 import { currentGridRate, fetchTodayGridFinancials, formatCurrency, formatPrice, readPrices } from '../helpers/pricingHelper';
@@ -70,6 +71,9 @@ export class EnergyFlowCard extends HTMLElement {
   private replayControls?: HTMLElement;
   private demoStart = 0;
   private reducedMotion = false;
+  private compactMobile = false;
+  private mobileFocusId?: string;
+  private resizeObserver?: ResizeObserver;
   private motionQuery?: MediaQueryList;
   private readonly onMotionChange = (ev: MediaQueryListEvent): void => {
     this.reducedMotion = ev.matches;
@@ -101,6 +105,7 @@ export class EnergyFlowCard extends HTMLElement {
     this.replayActive = false;
     this.replayTimestamp = undefined;
     this.replayControls = undefined;
+    this.mobileFocusId = undefined;
     this.buildStructure();
     this.syncTimer();
     this.update();
@@ -142,6 +147,22 @@ export class EnergyFlowCard extends HTMLElement {
       this.reducedMotion = this.motionQuery.matches;
       this.motionQuery.addEventListener('change', this.onMotionChange);
     }
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver((entries) => {
+        const width = entries[0]?.contentRect.width ?? 0;
+        if (width <= 0) return;
+        const compact = width < 700;
+        if (compact === this.compactMobile) return;
+        this.compactMobile = compact;
+        if (!compact) this.mobileFocusId = undefined;
+        this.closePopup();
+        this.buildStructure();
+        this.update();
+      });
+      this.resizeObserver.observe(this);
+    } else {
+      this.compactMobile = globalThis.innerWidth < 700;
+    }
     this.syncTimer();
     if (this.config) {
       this.update();
@@ -153,6 +174,8 @@ export class EnergyFlowCard extends HTMLElement {
 
   disconnectedCallback(): void {
     this.motionQuery?.removeEventListener('change', this.onMotionChange);
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = undefined;
     this.cancelHistoryPreload();
     if (this.updateFrame !== undefined) {
       window.cancelAnimationFrame(this.updateFrame);
@@ -204,6 +227,10 @@ export class EnergyFlowCard extends HTMLElement {
     } else {
       if (cfg.demo) stage.append(html('div', { class: 'badge' }, t('demo_badge', this.language)));
       if (cfg.pricing.mode !== 'none') stage.append(this.buildPriceBadge(cfg));
+      if (this.compactMobile) {
+        const nav = this.buildMobileFocusNav(cfg);
+        if (nav) stage.append(nav);
+      }
       stage.append(this.buildFlowSvg(cfg));
       const replay = this.buildReplayControls();
       this.replayControls = replay;
@@ -234,12 +261,19 @@ export class EnergyFlowCard extends HTMLElement {
   }
 
   private buildFlowSvg(cfg: ResolvedConfig): SVGSVGElement {
-    const nodes = this.displayNodes.length ? this.displayNodes : cfg.nodes;
-    const connections = this.displayConnections.length ? this.displayConnections : cfg.connections;
-    const layout = computeLayout(nodes, cfg.layout, connections);
+    const allNodes = this.displayNodes.length ? this.displayNodes : cfg.nodes;
+    const allConnections = this.displayConnections.length ? this.displayConnections : cfg.connections;
+    const focused = this.compactMobile ? buildMobileFocusGraph(allNodes, allConnections, this.mobileFocusId) : undefined;
+    const nodes = focused?.nodes ?? allNodes;
+    const connections = focused?.connections ?? allConnections;
+    const focusId = focused?.focusId;
+    const layoutNodes = focusId && focusId !== focused?.homeId
+      ? nodes.map((n) => n.id === focusId ? { ...n, role: 'home' as const } : n)
+      : nodes;
+    const layout = computeLayout(layoutNodes, cfg.layout, connections);
     const straight = layout.mode !== 'circle';
-    const byId = new Map(nodes.map((n) => [n.id, n]));
-    const homeNode = nodes.find((n) => n.role === 'home');
+    const byId = new Map(layoutNodes.map((n) => [n.id, n]));
+    const homeNode = layoutNodes.find((n) => n.role === 'home');
     const homeY = (homeNode && layout.positions.get(homeNode.id)?.y) ?? layout.height / 2;
     const radiusOf = (n: EnergyNode) => (n.role === 'home' ? HOME_RADIUS : NODE_RADIUS);
 
@@ -274,16 +308,46 @@ export class EnergyFlowCard extends HTMLElement {
       connLayer.append(el.el);
     }
 
-    for (const node of nodes) {
-      const pos = layout.positions.get(node.id);
+    for (const layoutNode of layoutNodes) {
+      const originalNode = nodes.find((n) => n.id === layoutNode.id) ?? layoutNode;
+      const pos = layout.positions.get(layoutNode.id);
       if (!pos) continue;
-      const nodeEl = createNodeElement(node, pos, radiusOf(node), () => this.openPopup(node.id), labelPositionFor(node, pos.y, homeY, straight));
-      this.nodeEls.set(node.id, nodeEl);
+      const onOpen = () => {
+        if (this.compactMobile && layoutNode.id !== focusId && hasFocusableChildren(layoutNode.id, allNodes, allConnections)) {
+          this.mobileFocusId = layoutNode.id;
+          this.closePopup();
+          this.buildStructure();
+          this.update();
+          return;
+        }
+        this.openPopup(layoutNode.id);
+      };
+      const nodeEl = createNodeElement(layoutNode, pos, radiusOf(layoutNode), onOpen, labelPositionFor(layoutNode, pos.y, homeY, straight));
+      this.nodeEls.set(originalNode.id, nodeEl);
       nodeLayer.append(nodeEl.el);
     }
     return root;
   }
 
+
+  private buildMobileFocusNav(cfg: ResolvedConfig): HTMLElement | undefined {
+    const allNodes = this.displayNodes.length ? this.displayNodes : cfg.nodes;
+    const allConnections = this.displayConnections.length ? this.displayConnections : cfg.connections;
+    const graph = buildMobileFocusGraph(allNodes, allConnections, this.mobileFocusId);
+    if (!graph.focusId || graph.focusId === graph.homeId) return undefined;
+    const focus = allNodes.find((n) => n.id === graph.focusId);
+    const parent = graph.parentId ? allNodes.find((n) => n.id === graph.parentId) : undefined;
+    const home = allNodes.find((n) => n.id === graph.homeId);
+    const label = [home?.name ?? t('home', this.language), focus?.name ?? graph.focusId].join(' › ');
+    const back = html('button', { class: 'mobile-focus-back', type: 'button', 'aria-label': t('mobile_focus_back', this.language) }, '‹');
+    back.addEventListener('click', () => {
+      this.mobileFocusId = parent && parent.id !== graph.homeId ? parent.id : undefined;
+      this.closePopup();
+      this.buildStructure();
+      this.update();
+    });
+    return html('div', { class: 'mobile-focus-nav' }, back, html('span', { class: 'mobile-focus-path' }, label));
+  }
 
   private buildReplayControls(): HTMLElement {
     const label = html('span', { class: 'replay-label' }, t('replay', this.language));

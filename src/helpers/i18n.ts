@@ -194,6 +194,7 @@ const nl: Record<string, string> = {
   replay_loading: "Geschiedenis laden…",
   replay_hint: "Sleep door de afgelopen 24 uur om de energiestromen van dat moment terug te kijken.",
   replay_no_history: "Niet genoeg geschiedenis voor replay",
+  mobile_focus_back: "Terug naar vorige laag",
 };
 
 const en: Record<string, string> = {
@@ -391,6 +392,7 @@ const en: Record<string, string> = {
   replay_loading: "Loading history…",
   replay_hint: "Scrub through the last 24 hours to replay the energy flows at that moment.",
   replay_no_history: "Not enough history for replay",
+  mobile_focus_back: "Back to previous level",
 };
 
 /**

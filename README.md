@@ -29,6 +29,8 @@ A custom Home Assistant Lovelace card for advanced live energy flows, device-lev
 
 ## Version history
 
+- **0.16.0** — Adds mobile focus navigation for large hierarchies, reliable touch-drag graph inspection, and a more compact replay control.
+
 - **0.15.2** — Fixes the Live replay slider width and replaces free-form color picking with a curated preset palette.
 - **0.15.0** — Adds configurable energy-type colors, a compact replay scrubber with contextual Live button, and coalesced Home Assistant state rendering for larger dashboards.
 - **0.14.0** — Adds multi-level consumer branches with parent/child power flows, loop protection and hierarchy-aware layouts.
@@ -345,6 +347,10 @@ All 24-hour power graphs can be inspected directly. Hover with a mouse or tap/dr
 When pricing and cumulative Grid import/export energy entities are configured, **Revenue today** is a signed financial result: export revenue minus import cost. It can therefore be negative on a day where import costs are higher than feed-in revenue.
 
 ## Colors and compact replay
+
+### Mobile focus and touch controls
+
+From 0.16.0, cards narrower than 700 px automatically show one hierarchy level at a time. Tap a branch that has children to focus it; use the breadcrumb back button to return. Tapping the focused centre node opens its normal detail popup. Graph inspection uses pointer capture, so dragging across 24-hour graphs works reliably on phones and tablets.
 
 Version 0.15 adds optional color overrides for Solar, Grid, Battery, Home, Consumers, EV chargers, Backup, Generator and Producer nodes. Use the visual editor under **Preview → Colors**, or configure `colors:` in YAML. Connections automatically use the matching node-type color.
 

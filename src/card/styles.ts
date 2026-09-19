@@ -159,7 +159,7 @@ ha-card.fallback {
 .graph .area { fill: var(--c); opacity: 0.14; }
 .graph .zero { stroke: var(--divider-color, #cfcfcf); stroke-dasharray: 3 3; }
 .graph .axis { fill: var(--secondary-text-color, #727272); font-size: 10.5px; }
-.interactive-graph { touch-action: pan-y; cursor: crosshair; }
+.interactive-graph { touch-action: none; cursor: crosshair; overscroll-behavior: contain; }
 .inspect-hit { pointer-events: all; cursor: crosshair; outline: none; }
 .inspect-marker { stroke: var(--primary-text-color, #fff); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.7; pointer-events: none; }
 .inspect-dot { fill: var(--c); stroke: var(--card-background-color, #111); stroke-width: 1.5; pointer-events: none; }
@@ -200,33 +200,32 @@ ha-card.fallback {
 .diagnostics-rows dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
 
 .replay-controls {
-  margin: 0 14px 12px; padding: 7px 10px;
-  border: 1px solid var(--divider-color, #e0e0e0); border-radius: 10px;
-  background: color-mix(in srgb, var(--secondary-background-color, #f5f5f5) 48%, transparent);
+  margin: 0 12px 10px; padding: 4px 8px;
+  border: 1px solid var(--divider-color, #e0e0e0); border-radius: 9px;
+  background: color-mix(in srgb, var(--secondary-background-color, #f5f5f5) 42%, transparent);
 }
 .replay-controls.active { border-color: color-mix(in srgb, var(--primary-color, #03a9f4) 70%, var(--divider-color, #e0e0e0)); }
-.replay-row { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 9px; min-height: 28px; }
-.replay-controls.active .replay-row { grid-template-columns: auto auto minmax(90px, 1fr) auto; }
-.replay-label { grid-column: 1; font-size: 12px; font-weight: 600; color: var(--secondary-text-color, #727272); white-space: nowrap; }
-.replay-time { grid-column: 2; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.replay-slider { grid-column: 2; width: 100%; min-width: 70px; height: 18px; margin: 0; accent-color: var(--primary-color, #03a9f4); }
-.replay-controls.active .replay-slider { grid-column: 3; }
-.replay-live { grid-column: 4; }
-.replay-live {
-  border: 0; border-radius: 999px; padding: 5px 9px; cursor: pointer; font: inherit; font-size: 11px; font-weight: 700;
-  background: var(--primary-color, #03a9f4); color: var(--text-primary-color, #fff); white-space: nowrap;
-}
+.replay-row { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 7px; min-height: 22px; }
+.replay-controls.active .replay-row { grid-template-columns: auto minmax(70px, 1fr) auto; }
+.replay-label { grid-column: 1; font-size: 11px; font-weight: 600; color: var(--secondary-text-color, #727272); white-space: nowrap; }
+.replay-controls.active .replay-label { display: none; }
+.replay-time { grid-column: 1; font-size: 10px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.replay-slider { grid-column: 2; width: 100%; min-width: 70px; height: 16px; margin: 0; accent-color: var(--primary-color, #03a9f4); }
+.replay-controls.active .replay-slider { grid-column: 2; }
+.replay-live { grid-column: 3; border: 0; border-radius: 999px; padding: 3px 8px; cursor: pointer; font: inherit; font-size: 10px; font-weight: 700; background: var(--primary-color, #03a9f4); color: var(--text-primary-color, #fff); white-space: nowrap; }
 .replay-live[hidden], .replay-time[hidden], .replay-status[hidden] { display: none !important; }
-.replay-status { display: block; margin-top: 2px; color: var(--secondary-text-color, #727272); font-size: 10px; line-height: 1.25; }
-@media (max-width: 520px) {
-  .replay-row { grid-template-columns: auto minmax(0, 1fr); gap: 7px; }
-  .replay-controls.active .replay-row { grid-template-columns: auto minmax(70px, 1fr) auto; }
-  .replay-controls.active .replay-label { grid-column: 1; }
-  .replay-controls.active .replay-slider { grid-column: 2; }
-  .replay-controls.active .replay-live { grid-column: 3; }
-  .replay-time { grid-column: 1 / -1; grid-row: 2; font-size: 10px; }
-  .replay-controls.active .replay-time { display: block; }
+.replay-status { display: block; margin-top: 1px; color: var(--secondary-text-color, #727272); font-size: 9px; line-height: 1.2; }
+
+.mobile-focus-nav {
+  display: flex; align-items: center; gap: 7px; margin: 38px 4px 4px;
+  min-width: 0; color: var(--secondary-text-color, #727272);
 }
+.mobile-focus-back {
+  width: 28px; height: 28px; flex: 0 0 28px; border-radius: 50%; border: 1px solid var(--divider-color, #e0e0e0);
+  background: color-mix(in srgb, var(--card-background-color, #fff) 90%, transparent); color: var(--primary-text-color, #212121);
+  font: inherit; font-size: 21px; line-height: 1; cursor: pointer;
+}
+.mobile-focus-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 600; }
 
 
 .energy-stats {
