@@ -1,0 +1,17 @@
+{
+  "name": "energy-flow-card",
+  "version": "0.7.2",
+  "description": "Custom Home Assistant Lovelace-kaart die live laat zien waar je energie vandaan komt en waar die heen gaat.",
+  "private": true,
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --minify --format=esm --target=es2021 --outfile=dist/energy-flow-card.js",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "check": "npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "esbuild": "*",
+    "tsx": "*",
+    "typescript": "*"
+  }
+}
