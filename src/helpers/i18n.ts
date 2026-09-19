@@ -149,6 +149,19 @@ const nl: Record<string, string> = {
   current_revenue_rate: "Opbrengst op dit moment",
   revenue_today: "Opbrengst vandaag",
   per_hour: "per uur",
+  diagnostics: "Diagnose",
+  diag_no_issues: "Geen problemen gedetecteerd",
+  diag_attention: "Aandacht nodig",
+  diag_sensor_not_configured: "Geen vermogenssensor ingesteld",
+  diag_sensor_missing: "Vermogenssensor ontbreekt",
+  diag_sensor_unavailable: "Vermogenssensor niet beschikbaar",
+  diag_sensor_unknown: "Vermogenssensor onbekend",
+  diag_sensor_stale: "Sensor niet recent bijgewerkt",
+  diag_balance_difference: "Afwijking energiebalans",
+  diag_consumers_exceed_home: "Gemeten apparaten hoger dan Woning",
+  diag_unmetered_consumption: "Overig / ongemeten verbruik",
+  diag_consumers_over_home: "Verschil t.o.v. Woning",
+  minutes_short: "min",
 };
 
 const en: Record<string, string> = {
@@ -301,6 +314,19 @@ const en: Record<string, string> = {
   current_revenue_rate: "Current revenue rate",
   revenue_today: "Revenue today",
   per_hour: "per hour",
+  diagnostics: "Diagnostics",
+  diag_no_issues: "No problems detected",
+  diag_attention: "Needs attention",
+  diag_sensor_not_configured: "No power sensor configured",
+  diag_sensor_missing: "Power sensor is missing",
+  diag_sensor_unavailable: "Power sensor unavailable",
+  diag_sensor_unknown: "Power sensor unknown",
+  diag_sensor_stale: "Sensor has not updated recently",
+  diag_balance_difference: "Energy balance difference",
+  diag_consumers_exceed_home: "Metered devices exceed Home",
+  diag_unmetered_consumption: "Other / unmetered consumption",
+  diag_consumers_over_home: "Difference versus Home",
+  minutes_short: "min",
 };
 
 /**

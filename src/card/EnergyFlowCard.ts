@@ -1,5 +1,6 @@
 import { ConfigError, ResolvedConfig, normalizeConfig } from '../config/CardConfig';
 import { demoReadings } from '../demo/DemoEngine';
+import { computeDiagnostics, highestSeverity, type DiagnosticItem, type DiagnosticReport } from '../helpers/diagnosticsHelper';
 import {
   NodeReading,
   computeFlows,
@@ -34,6 +35,7 @@ const DEMO_OFFSET_S = 300;
 interface Computed {
   readings: Map<string, NodeReading>;
   flows: Map<string, number | null>;
+  diagnostics: DiagnosticReport;
 }
 
 export class EnergyFlowCard extends HTMLElement {
@@ -268,11 +270,12 @@ export class EnergyFlowCard extends HTMLElement {
       readings.set(home.id, measuredHome ? readNode(home, this._hass) : computeHomeReading(home, cfg.nodes, cfg.connections, sourceFlows));
     }
 
+    const diagnostics = computeDiagnostics(cfg.nodes, cfg.connections, readings, sourceFlows, cfg.demo ? undefined : this._hass);
     applyGroupReadings(cfg.groups, this.groupNodes, readings);
     const displayNodes = this.displayNodes.length ? this.displayNodes : cfg.nodes;
     const displayConnections = this.displayConnections.length ? this.displayConnections : cfg.connections;
     flows = computeFlows(displayNodes, displayConnections, readings, cfg.demo ? undefined : this._hass, { ignoreEntities: cfg.demo });
-    return { readings, flows };
+    return { readings, flows, diagnostics };
   }
 
   private updatePriceBadge(): void {
@@ -307,7 +310,14 @@ export class EnergyFlowCard extends HTMLElement {
 
     for (const node of (this.displayNodes.length ? this.displayNodes : cfg.nodes)) {
       const reading = this.computed.readings.get(node.id);
-      if (reading) this.nodeEls.get(node.id)?.update(describeNode(node, reading, ctx));
+      if (reading) {
+        const view = describeNode(node, reading, ctx);
+        const issues = node.groupMembers?.length
+          ? node.groupMembers.flatMap((id) => this.computed?.diagnostics.byNode.get(id) ?? [])
+          : this.computed.diagnostics.byNode.get(node.id);
+        view.diagnostic = highestSeverity(issues);
+        this.nodeEls.get(node.id)?.update(view);
+      }
     }
     const flowCtx = this.flowContext();
     for (const { conn, el } of this.connEls) el.update(this.computed.flows.get(conn.id) ?? null, flowCtx);
@@ -442,10 +452,42 @@ export class EnergyFlowCard extends HTMLElement {
       rows,
       history,
       phases,
+      diagnostics: this.diagnosticRows(node),
       note: node.groupMembers?.length ? `${t('group_total_of', lang)} ${node.groupMembers.length}` : node.role === 'home' ? t(computedHome ? 'home_computed' : 'home_measured', lang) : undefined,
       powerFormat: cfg.powerFormat,
       language: lang,
     };
+  }
+
+  private diagnosticRows(node: EnergyNode): PopupModel['diagnostics'] | undefined {
+    const report = this.computed?.diagnostics;
+    if (!report) return undefined;
+    const lang = this.language;
+    const issues: DiagnosticItem[] = node.groupMembers?.length
+      ? node.groupMembers.flatMap((id) => report.byNode.get(id) ?? [])
+      : [...(report.byNode.get(node.id) ?? [])];
+    const rows: PopupRow[] = issues.map((item) => ({
+      label: t(item.labelKey, lang),
+      value: item.minutes !== undefined
+        ? `${Math.round(item.minutes)} ${t('minutes_short', lang)}`
+        : item.watts !== undefined
+          ? `${item.watts < 0 ? '−' : ''}${formatPower(item.watts, this.config!.powerFormat)}`
+          : item.detail ?? t('diag_attention', lang),
+    }));
+
+    if (node.role === 'home' && report.unmeteredConsumptionWatts !== null) {
+      const watts = report.unmeteredConsumptionWatts;
+      rows.push({
+        label: t(watts >= 0 ? 'diag_unmetered_consumption' : 'diag_consumers_over_home', lang),
+        value: `${watts < 0 ? '−' : ''}${formatPower(watts, this.config!.powerFormat)}`,
+      });
+    }
+
+    const severity = highestSeverity(issues);
+    if (rows.length === 0) {
+      return { severity: 'ok', rows: [], message: t('diag_no_issues', lang) };
+    }
+    return { severity: severity ?? 'info', rows };
   }
 
   private derivedL1Key(node: EnergyNode): string {

@@ -14,6 +14,12 @@ export interface PopupRow {
   value: string;
 }
 
+export interface DiagnosticPopupModel {
+  severity: 'ok' | 'info' | 'warning' | 'error';
+  rows: PopupRow[];
+  message?: string;
+}
+
 export interface PhaseGraphSeries {
   label: 'L1' | 'L2' | 'L3';
   history: HistoryState;
@@ -36,6 +42,7 @@ export interface PopupModel {
   rows: PopupRow[];
   history: HistoryState;
   phases?: PhaseGraphModel;
+  diagnostics?: DiagnosticPopupModel;
   note?: string;
   powerFormat: PowerFormat;
   language?: string;
@@ -405,6 +412,21 @@ export class Popup {
 
     this.body.replaceChildren(big, graphBox);
     if (model.rows.length > 0) this.body.append(rows);
+    if (model.diagnostics) {
+      const box = html('section', { class: `diagnostics diagnostics-${model.diagnostics.severity}` },
+        html('div', { class: 'diagnostics-head' },
+          html('span', { class: 'diagnostics-dot', 'aria-hidden': 'true' }),
+          html('h3', {}, t('diagnostics', language)),
+        ),
+      );
+      if (model.diagnostics.message) box.append(html('p', { class: 'diagnostics-message' }, model.diagnostics.message));
+      if (model.diagnostics.rows.length > 0) {
+        const diagnosticRows = html('dl', { class: 'diagnostics-rows' });
+        for (const row of model.diagnostics.rows) diagnosticRows.append(html('dt', {}, row.label), html('dd', {}, row.value));
+        box.append(diagnosticRows);
+      }
+      this.body.append(box);
+    }
     if (model.note) this.body.append(html('p', { class: 'popup-note' }, model.note));
   }
 }

@@ -121,6 +121,9 @@ ha-card.fallback {
 .node[data-status="charging"] .charging { display: block; }
 .charging circle { fill: var(--c); }
 .bolt { fill: var(--card-background-color, #fff); }
+.diagnostic-badge circle { fill: var(--warning-color, #f9a825); stroke: var(--card-background-color, #fff); stroke-width: 1.5; }
+.diagnostic-badge[data-severity="error"] circle { fill: var(--error-color, #db4437); }
+.diagnostic-badge text { fill: #fff; font-size: 12px; font-weight: 800; stroke: none; }
 
 /* Detailweergave */
 .popup {
@@ -184,6 +187,17 @@ ha-card.fallback {
 .popup-rows dt { color: var(--secondary-text-color, #727272); }
 .popup-rows dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
 .popup-note { margin: 12px 0 0; font-size: 13px; color: var(--secondary-text-color, #727272); }
+.diagnostics { margin-top: 14px; padding: 11px 12px; border: 1px solid var(--divider-color, #e0e0e0); border-radius: 10px; background: color-mix(in srgb, var(--secondary-background-color, #f5f5f5) 65%, transparent); }
+.diagnostics-head { display: flex; align-items: center; gap: 7px; }
+.diagnostics-head h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.diagnostics-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success-color, #43a047); flex: 0 0 auto; }
+.diagnostics-warning .diagnostics-dot { background: var(--warning-color, #f9a825); }
+.diagnostics-error .diagnostics-dot { background: var(--error-color, #db4437); }
+.diagnostics-info .diagnostics-dot { background: var(--info-color, #039be5); }
+.diagnostics-message { margin: 7px 0 0; font-size: 13px; color: var(--secondary-text-color, #727272); }
+.diagnostics-rows { display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; margin: 8px 0 0; font-size: 13px; }
+.diagnostics-rows dt { color: var(--secondary-text-color, #727272); }
+.diagnostics-rows dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
 
 @media (max-width: 600px) {
   .stage { min-height: 0; padding-inline: 6px; }

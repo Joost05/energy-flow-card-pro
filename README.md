@@ -26,6 +26,12 @@ A custom Home Assistant Lovelace card for advanced live energy flows, device-lev
 
 ## Version history
 
+### v0.11.0
+
+- Added live diagnostics for sensor health, stale values and measurable energy-balance differences.
+- Added Home **Other / unmetered consumption** to show how much live load is not represented by configured consumer nodes.
+- Added small warning badges only for real diagnostic warnings/errors; informational values remain in the popup.
+
 ### v0.10.2
 
 - Added interactive inspection to every 24-hour graph: hover on desktop or tap/drag on touch devices to view the exact time and power.
@@ -290,6 +296,20 @@ Device names entered by the user are never translated automatically.
 All 24-hour power graphs can be inspected directly. Hover with a mouse or tap/drag on a touch device to show the time and power at that point. When the Grid phase view is enabled, the inspector shows L1, L2, L3 and their combined total.
 
 When pricing and cumulative Grid import/export energy entities are configured, **Revenue today** is a signed financial result: export revenue minus import cost. It can therefore be negative on a day where import costs are higher than feed-in revenue.
+
+## Diagnostics
+
+Version 0.11 adds lightweight live diagnostics without trying to classify electrical faults. Open any node to see its diagnostic status.
+
+The card checks the primary power sensor for:
+
+- missing entities;
+- `unavailable` or `unknown` states;
+- stale values that have not updated for more than 15 minutes.
+
+When Home has its own independent power sensor, the card can also compare that measurement with the source-side Grid/PV/Battery balance. Differences above 100 W are shown as a warning.
+
+For Home, **Other / unmetered consumption** is calculated as Home load minus the sum of configured consumer nodes. This is useful for seeing the part of the house load that is not represented by individual devices. It is informational, not an electrical-fault alarm.
 
 ## Development
 

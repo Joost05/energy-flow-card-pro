@@ -19,6 +19,8 @@ export interface NodeView {
   subtitle?: string;
   /** Batterijniveau 0..1 voor het icoon. */
   level?: number;
+  /** Alleen voor echte diagnoseproblemen; info-items krijgen geen badge. */
+  diagnostic?: 'info' | 'warning' | 'error';
 }
 
 export interface DescribeContext {
@@ -186,10 +188,12 @@ export function createNodeElement(
 
   const badge = svg('g', { class: 'charging', transform: `translate(${radius * 0.72} ${-radius * 0.72})` });
   badge.append(svg('circle', { r: 11 }), svg('path', { d: BOLT, class: 'bolt' }));
+  const diagnostic = svg('g', { class: 'diagnostic-badge', transform: `translate(${-radius * 0.72} ${-radius * 0.72})`, visibility: 'hidden' });
+  diagnostic.append(svg('circle', { r: 9 }), svg('text', { x: 0, y: 4, 'text-anchor': 'middle' }, '!'));
 
   if (isBattery) g.append(socText);
   if (!hasIcon) g.append(nameIn);
-  g.append(value, badge);
+  g.append(value, badge, diagnostic);
   if (hasIcon) g.append(label, sub);
   else g.append(subNoIcon);
 
@@ -214,6 +218,13 @@ export function createNodeElement(
     setText(socText, view.socText ?? '');
     setText(sub, view.subtitle ?? '');
     setText(subNoIcon, view.subtitle ?? '');
+    if (view.diagnostic === 'warning' || view.diagnostic === 'error') {
+      diagnostic.setAttribute('visibility', 'visible');
+      diagnostic.setAttribute('data-severity', view.diagnostic);
+    } else {
+      diagnostic.setAttribute('visibility', 'hidden');
+      diagnostic.removeAttribute('data-severity');
+    }
     if (levelRect) {
       const h = 13 * (view.level ?? 0);
       setAttr(levelRect, 'height', h.toFixed(2));

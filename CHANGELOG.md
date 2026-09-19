@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.11.0
+
+- Added live diagnostics to every node popup.
+- Added sensor-health checks for missing, unavailable, unknown and stale primary power sensors.
+- Added a small warning badge on nodes only when an actual warning or error is detected.
+- Added Home energy-balance diagnostics when an independent Home power sensor is configured.
+- Added **Other / unmetered consumption** to the Home diagnostics, based on Home load minus configured consumer loads.
+- Added a warning when the sum of metered consumer devices exceeds Home by more than the built-in tolerance.
+- Diagnostics remain informational and do not attempt phase-imbalance or electrical-fault classification.
+- Demo mode also exposes the diagnostics section so the feature can be previewed without real sensors.
+- Updated runtime/package version to **0.11.0**.
+
 ## 0.10.2
 
 - Made all 24-hour graphs interactive: hover on desktop or tap/drag on touch devices to inspect the power at a specific time.
