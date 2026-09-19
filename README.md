@@ -26,6 +26,7 @@ A custom Home Assistant Lovelace card for advanced live energy flows, device-lev
 
 ## Version history
 
+- **0.12.1** — Fixes Demo replay and preloads one synchronized history timeline for the complete card.
 - **0.12.0** — Historical replay of the complete card with a 24-hour scrubber and Live return.
 
 ### v0.11.0

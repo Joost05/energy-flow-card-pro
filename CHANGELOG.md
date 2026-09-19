@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.1
+
+- Fixed Demo replay showing **Not enough history for replay** even though demo history was available.
+- Demo history is now generated as one synchronized 24-hour bundle for all visible nodes.
+- Demo replay history is preloaded as soon as the card is connected, so the scrubber is ready immediately.
+- Reused the synchronized demo bundle for popup history to keep replay and detail graphs on the same timeline.
+- Updated runtime/package version to **0.12.1**.
+
 ## 0.12.0
 
 - Added historical replay for the complete energy-flow diagram.

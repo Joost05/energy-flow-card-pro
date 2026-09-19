@@ -1,6 +1,7 @@
 (()=>{
+"use strict";
 const __mods={
-"src/card/EnergyFlowCard.js":function(require,module,exports){
+"src/card/EnergyFlowCard.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ConfigError = exports.EnergyFlowCard = void 0;
@@ -102,7 +103,10 @@ class EnergyFlowCard extends HTMLElement {
         this.syncTimer();
         if (this.config) {
             this.update();
-            this.scheduleHistoryPreload();
+            if (this.config.demo)
+                this.loadDemoHistoryBundle();
+            else
+                this.scheduleHistoryPreload();
             void this.ensureTodayGridBalance();
         }
     }
@@ -231,14 +235,10 @@ class EnergyFlowCard extends HTMLElement {
         const hint = this.replayControls?.querySelector('[data-replay-hint]');
         if (hint)
             hint.textContent = (0, i18n_1.t)('replay_loading', this.language);
-        if (this.config?.demo) {
-            const nodes = this.displayNodes.length ? this.displayNodes : this.config.nodes;
-            for (const node of nodes)
-                this.storeHistory(node, this.demoHistory(node));
-        }
-        else {
+        if (this.config?.demo)
+            this.loadDemoHistoryBundle();
+        else
             await this.ensureHistoryBundle();
-        }
         const range = this.replayWindow();
         if (!range) {
             if (hint)
@@ -660,7 +660,7 @@ class EnergyFlowCard extends HTMLElement {
         if (cached && Date.now() - cached.fetchedAt < HISTORY_TTL_MS)
             return;
         if (cfg.demo) {
-            this.storeHistory(node, this.demoHistory(node));
+            this.loadDemoHistoryBundle();
             return;
         }
         const restored = this.readHistorySession(node);
@@ -909,31 +909,40 @@ class EnergyFlowCard extends HTMLElement {
         catch {
         }
     }
-    demoHistory(node) {
+    loadDemoHistoryBundle() {
         const cfg = this.config;
+        if (!cfg?.demo)
+            return;
+        const nodes = this.displayNodes.length ? this.displayNodes : cfg.nodes;
         const now = Date.now();
         const span = 24 * 3_600_000;
+        const start = now - span;
         const nowT = DEMO_OFFSET_S + (performance.now() - this.demoStart) / 1000;
         const samples = 96;
-        const points = [];
-        const home = cfg.nodes.find((n) => n.role === 'home');
+        const perNode = new Map(nodes.map((node) => [node.id, []]));
+        const home = cfg.nodes.find((node) => node.role === 'home');
         for (let i = 0; i < samples; i++) {
             const tSeconds = nowT - 240 + (240 * i) / (samples - 1);
+            const timestamp = start + (span * i) / (samples - 1);
             const readings = (0, DemoEngine_1.demoReadings)(cfg.nodes, tSeconds);
             (0, flowHelper_1.applyBackupReadings)(cfg.nodes, cfg.connections, readings, true);
+            const sourceFlows = (0, flowHelper_1.computeFlows)(cfg.nodes, cfg.connections, readings, undefined, { ignoreEntities: true });
+            if (home)
+                readings.set(home.id, (0, flowHelper_1.computeHomeReading)(home, cfg.nodes, cfg.connections, sourceFlows));
             (0, groupHelper_1.applyGroupReadings)(cfg.groups, this.groupNodes, readings);
-            let watts;
-            if (node.role === 'home' && home) {
-                const flows = (0, flowHelper_1.computeFlows)(cfg.nodes, cfg.connections, readings, undefined, { ignoreEntities: true });
-                watts = (0, flowHelper_1.computeHomeReading)(home, cfg.nodes, cfg.connections, flows).watts;
+            for (const node of nodes) {
+                const watts = readings.get(node.id)?.watts;
+                if (typeof watts === 'number')
+                    perNode.get(node.id)?.push({ t: timestamp, v: watts });
             }
-            else {
-                watts = readings.get(node.id)?.watts;
-            }
-            if (typeof watts === 'number')
-                points.push({ t: now - span + (span * i) / (samples - 1), v: watts });
         }
-        return points.length >= 2 ? { kind: 'ready', points, start: now - span, end: now } : { kind: 'none' };
+        const fetchedAt = Date.now();
+        for (const node of nodes) {
+            const points = perNode.get(node.id) ?? [];
+            this.storeHistory(node, points.length >= 2 ? { kind: 'ready', points, start, end: now } : { kind: 'none' }, fetchedAt);
+        }
+        this.historyBundleFetchedAt = fetchedAt;
+        this.updateReplayControls();
     }
 }
 exports.EnergyFlowCard = EnergyFlowCard;
@@ -944,7 +953,7 @@ function labelPositionFor(node, y, homeY, straight) {
 }
 
 },
-"src/card/styles.js":function(require,module,exports){
+"src/card/styles.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.styles = void 0;
@@ -1169,7 +1178,7 @@ ha-card.fallback {
 `;
 
 },
-"src/config/CardConfig.js":function(require,module,exports){
+"src/config/CardConfig.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ConfigError = void 0;
@@ -1455,7 +1464,7 @@ function parseLayout(raw) {
 }
 
 },
-"src/demo/DemoEngine.js":function(require,module,exports){
+"src/demo/DemoEngine.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.demoReadings = demoReadings;
@@ -1551,7 +1560,7 @@ function demoReadings(nodes, t) {
 }
 
 },
-"src/editor/EnergyFlowCardEditor.js":function(require,module,exports){
+"src/editor/EnergyFlowCardEditor.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EnergyFlowCardEditor = void 0;
@@ -2267,7 +2276,7 @@ class EnergyFlowCardEditor extends HTMLElement {
 exports.EnergyFlowCardEditor = EnergyFlowCardEditor;
 
 },
-"src/helpers/diagnosticsHelper.js":function(require,module,exports){
+"src/helpers/diagnosticsHelper.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.computeDiagnostics = computeDiagnostics;
@@ -2408,7 +2417,7 @@ function highestSeverity(items) {
 }
 
 },
-"src/helpers/flowHelper.js":function(require,module,exports){
+"src/helpers/flowHelper.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.flowToHome = flowToHome;
@@ -2608,7 +2617,7 @@ function applyBackupReadings(nodes, connections, readings, demo) {
 }
 
 },
-"src/helpers/groupHelper.js":function(require,module,exports){
+"src/helpers/groupHelper.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.groupedGroups = groupedGroups;
@@ -2676,7 +2685,7 @@ function applyGroupReadings(groups, groupNodes, readings) {
 }
 
 },
-"src/helpers/historyHelper.js":function(require,module,exports){
+"src/helpers/historyHelper.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.fetchHistoryBatch = fetchHistoryBatch;
@@ -2749,7 +2758,7 @@ function unitFactor(unit) {
 }
 
 },
-"src/helpers/i18n.js":function(require,module,exports){
+"src/helpers/i18n.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.t = t;
@@ -3103,7 +3112,7 @@ function hassLanguage(hass) {
 }
 
 },
-"src/helpers/phaseHelper.js":function(require,module,exports){
+"src/helpers/phaseHelper.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deriveL1Power = deriveL1Power;
@@ -3132,7 +3141,7 @@ function deriveL1History(total, l2, l3) {
 }
 
 },
-"src/helpers/pricingHelper.js":function(require,module,exports){
+"src/helpers/pricingHelper.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.readPrices = readPrices;
@@ -3321,7 +3330,7 @@ async function fetchTodayExportRevenue(hass, exportEnergyEntity, pricing, now = 
 }
 
 },
-"src/helpers/replayHelper.js":function(require,module,exports){
+"src/helpers/replayHelper.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.nearestHistoryPoint = nearestHistoryPoint;
@@ -3354,7 +3363,7 @@ function replayRange(series) {
 }
 
 },
-"src/helpers/stateHelper.js":function(require,module,exports){
+"src/helpers/stateHelper.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.parsePower = parsePower;
@@ -3439,7 +3448,7 @@ function round(value, decimals) {
 }
 
 },
-"src/index.js":function(require,module,exports){
+"src/index.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const EnergyFlowCard_1 = require("./card/EnergyFlowCard");
@@ -3457,10 +3466,10 @@ if (!window.customCards.some((c) => c.type === 'energy-flow-card')) {
         preview: true,
     });
 }
-console.info('%c ENERGY-FLOW-CARD-PRO %c 0.12.0 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
+console.info('%c ENERGY-FLOW-CARD-PRO %c 0.12.1 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
 
 },
-"src/layout/AutoLayout.js":function(require,module,exports){
+"src/layout/AutoLayout.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.STRAIGHT_ROW_GAP = exports.HOME_RADIUS = exports.NODE_RADIUS = void 0;
@@ -3835,7 +3844,7 @@ function straightLayout(nodes, auto, links) {
 }
 
 },
-"src/models/Connection.js":function(require,module,exports){
+"src/models/Connection.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createConnection = createConnection;
@@ -3880,7 +3889,7 @@ function parentOf(node, nodes) {
 }
 
 },
-"src/models/Node.js":function(require,module,exports){
+"src/models/Node.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createNode = createNode;
@@ -3973,7 +3982,7 @@ function fieldLabelKey(field, type) {
 }
 
 },
-"src/renderer/ConnectionRenderer.js":function(require,module,exports){
+"src/renderer/ConnectionRenderer.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.computeGeometry = computeGeometry;
@@ -4145,7 +4154,7 @@ function createConnectionElement(conn, from, to, curved, color, orthogonal = fal
 }
 
 },
-"src/renderer/NodeRenderer.js":function(require,module,exports){
+"src/renderer/NodeRenderer.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.displayNameOf = displayNameOf;
@@ -4319,7 +4328,7 @@ function createNodeElement(node, center, radius, onOpen, labelPosition = 'below'
 }
 
 },
-"src/renderer/PopupRenderer.js":function(require,module,exports){
+"src/renderer/PopupRenderer.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Popup = void 0;
@@ -4644,7 +4653,7 @@ class Popup {
 exports.Popup = Popup;
 
 },
-"src/renderer/dom.js":function(require,module,exports){
+"src/renderer/dom.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.svg = svg;
@@ -4682,7 +4691,7 @@ function setAttr(el, name, value) {
 }
 
 },
-"src/types/EntityStatus.js":function(require,module,exports){
+"src/types/EntityStatus.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EntityStatus = void 0;
@@ -4713,7 +4722,7 @@ function hasValue(status) {
 }
 
 },
-"src/types/NodeType.js":function(require,module,exports){
+"src/types/NodeType.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TYPES_WITH_DEFAULT_ICON = exports.NODE_TYPES = void 0;
@@ -4776,14 +4785,14 @@ function roleOf(type) {
 exports.TYPES_WITH_DEFAULT_ICON = new Set(['home', 'grid', 'solar', 'battery', 'backup']);
 
 },
-"src/types/hass.js":function(require,module,exports){
+"src/types/hass.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 
 },
 };
 const __cache={};
-function __resolve(from,spec){if(!spec.startsWith('.'))throw new Error('Unsupported external module: '+spec);const base=from.split('/');base.pop();for(const part of spec.split('/')){if(!part||part==='.')continue;if(part==='..')base.pop();else base.push(part);}let id=base.join('/');if(!id.endsWith('.js'))id+='.js';return id;}
-function __load(id){if(__cache[id])return __cache[id].exports;const fn=__mods[id];if(!fn)throw new Error('Module not found: '+id);const module={exports:{}};__cache[id]=module;fn((spec)=>__load(__resolve(id,spec)),module,module.exports);return module.exports;}
-__load("src/index.js");
+function __norm(p){const a=[];for(const s of p.split("/")){if(!s||s===".")continue;if(s==="..")a.pop();else a.push(s);}return a.join("/");}
+function __req(id){id=__norm(id);if(!id.endsWith(".js"))id+=".js";if(__cache[id])return __cache[id].exports;const fn=__mods[id];if(!fn)throw new Error("Module not found: "+id);const m={exports:{}};__cache[id]=m;const base=id.slice(0,id.lastIndexOf("/")+1);const local=(p)=>p.startsWith(".")?__req(__norm(base+p)):__req(p);fn(m,m.exports,local);return m.exports;}
+__req("src/index.js");
 })();

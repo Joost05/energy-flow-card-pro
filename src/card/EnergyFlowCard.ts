@@ -136,7 +136,8 @@ export class EnergyFlowCard extends HTMLElement {
     this.syncTimer();
     if (this.config) {
       this.update();
-      this.scheduleHistoryPreload();
+      if (this.config.demo) this.loadDemoHistoryBundle();
+      else this.scheduleHistoryPreload();
       void this.ensureTodayGridBalance();
     }
   }
@@ -298,12 +299,8 @@ export class EnergyFlowCard extends HTMLElement {
     }
     const hint = this.replayControls?.querySelector('[data-replay-hint]');
     if (hint) hint.textContent = t('replay_loading', this.language);
-    if (this.config?.demo) {
-      const nodes = this.displayNodes.length ? this.displayNodes : this.config.nodes;
-      for (const node of nodes) this.storeHistory(node, this.demoHistory(node));
-    } else {
-      await this.ensureHistoryBundle();
-    }
+    if (this.config?.demo) this.loadDemoHistoryBundle();
+    else await this.ensureHistoryBundle();
     const range = this.replayWindow();
     if (!range) {
       if (hint) hint.textContent = t('replay_no_history', this.language);
@@ -725,7 +722,7 @@ export class EnergyFlowCard extends HTMLElement {
     if (cached && Date.now() - cached.fetchedAt < HISTORY_TTL_MS) return;
 
     if (cfg.demo) {
-      this.storeHistory(node, this.demoHistory(node));
+      this.loadDemoHistoryBundle();
       return;
     }
 
@@ -979,31 +976,49 @@ export class EnergyFlowCard extends HTMLElement {
     }
   }
 
-  /** Demo: hergebruikt de demo-engine over de afgelopen 240 s en presenteert dat als "24 uur". */
-  private demoHistory(node: EnergyNode): HistoryState {
-    const cfg = this.config!;
+  /**
+   * Demo-history wordt in één batch opgebouwd met exact dezelfde tijdas voor alle zichtbare nodes.
+   * Dit voorkomt dat de replay-range leeg raakt doordat afzonderlijk opgebouwde demo-series net
+   * verschillende start-/eindtijden hebben. Dezelfde batch voedt ook de gewone popup-grafieken.
+   */
+  private loadDemoHistoryBundle(): void {
+    const cfg = this.config;
+    if (!cfg?.demo) return;
+
+    const nodes = this.displayNodes.length ? this.displayNodes : cfg.nodes;
     const now = Date.now();
     const span = 24 * 3_600_000;
+    const start = now - span;
     const nowT = DEMO_OFFSET_S + (performance.now() - this.demoStart) / 1000;
     const samples = 96;
-    const points: HistoryPoint[] = [];
-    const home = cfg.nodes.find((n) => n.role === 'home');
+    const perNode = new Map<string, HistoryPoint[]>(nodes.map((node) => [node.id, []]));
+    const home = cfg.nodes.find((node) => node.role === 'home');
+
     for (let i = 0; i < samples; i++) {
       const tSeconds = nowT - 240 + (240 * i) / (samples - 1);
+      const timestamp = start + (span * i) / (samples - 1);
       const readings = demoReadings(cfg.nodes, tSeconds);
       applyBackupReadings(cfg.nodes, cfg.connections, readings, true);
+
+      const sourceFlows = computeFlows(cfg.nodes, cfg.connections, readings, undefined, { ignoreEntities: true });
+      if (home) readings.set(home.id, computeHomeReading(home, cfg.nodes, cfg.connections, sourceFlows));
       applyGroupReadings(cfg.groups, this.groupNodes, readings);
-      let watts: number | null | undefined;
-      if (node.role === 'home' && home) {
-        const flows = computeFlows(cfg.nodes, cfg.connections, readings, undefined, { ignoreEntities: true });
-        watts = computeHomeReading(home, cfg.nodes, cfg.connections, flows).watts;
-      } else {
-        watts = readings.get(node.id)?.watts;
+
+      for (const node of nodes) {
+        const watts = readings.get(node.id)?.watts;
+        if (typeof watts === 'number') perNode.get(node.id)?.push({ t: timestamp, v: watts });
       }
-      if (typeof watts === 'number') points.push({ t: now - span + (span * i) / (samples - 1), v: watts });
     }
-    return points.length >= 2 ? { kind: 'ready', points, start: now - span, end: now } : { kind: 'none' };
+
+    const fetchedAt = Date.now();
+    for (const node of nodes) {
+      const points = perNode.get(node.id) ?? [];
+      this.storeHistory(node, points.length >= 2 ? { kind: 'ready', points, start, end: now } : { kind: 'none' }, fetchedAt);
+    }
+    this.historyBundleFetchedAt = fetchedAt;
+    this.updateReplayControls();
   }
+
 }
 
 /** Namen boven Home komen boven de node; in de rechte layout staan Home en backup (lijnen boven en onder) ernaast. */
