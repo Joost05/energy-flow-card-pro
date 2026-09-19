@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## [1.0.0] - 2026-09-20
+
+### Added
 
 - Reworked the public README for the upcoming 1.0 release.
 - Added a full configuration reference in `docs/configuration.md`.
@@ -8,6 +10,11 @@
 - Added migration guidance for the v0.17 technical rename and manual-to-HACS installations.
 - Added a maintainer release guide and 1.0 release checklist.
 - Added cropped documentation screenshots and wired them into the README and docs pages.
+
+### Changed
+- Preserved the currently inspected graph timestamp across live Home Assistant state updates, so hover/touch/click inspection no longer disappears when wattage changes.
+- Desktop hover remains transient when the pointer leaves the graph; clicked/touch-selected points remain pinned until changed, cleared or the popup is closed.
+- Finalized the public 1.0 documentation and screenshot set.
 
 ## [0.18.0] - 2026-09-20
 

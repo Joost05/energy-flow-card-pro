@@ -1,7 +1,7 @@
-// Energy Flow Card Pro v0.18.0
 (()=>{
-const __mods = Object.create(null);
-__mods["card/EnergyFlowCard.js"] = function(module, exports, require){
+"use strict";
+const __mods={
+"src/card/EnergyFlowCard.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ConfigError = exports.EnergyFlowCard = void 0;
@@ -32,7 +32,6 @@ const HISTORY_TTL_MS = 5 * 60_000;
 const HISTORY_BUCKETS = 96;
 const HISTORY_PRELOAD_DELAY_MS = 0;
 const HISTORY_SESSION_PREFIX = 'efc-history-v2:';
-/** In demo-modus begint de tijd op 300 s, zodat er al "geschiedenis" bestaat voor de grafiek. */
 const DEMO_OFFSET_S = 300;
 class EnergyFlowCard extends HTMLElement {
     constructor() {
@@ -60,10 +59,8 @@ class EnergyFlowCard extends HTMLElement {
         };
         this.attachShadow({ mode: 'open' });
     }
-    // ----- Home Assistant-contract -----------------------------------------------------------
-    /** Wordt door Home Assistant aangeroepen bij elke wijziging van de YAML. Gooit een ConfigError bij fouten. */
     setConfig(raw) {
-        this.config = (0, CardConfig_1.normalizeConfig)(raw); // gooit bij ongeldige config; HA toont dan een foutkaart
+        this.config = (0, CardConfig_1.normalizeConfig)(raw);
         this.closePopup();
         this.history.clear();
         this.phaseHistory.clear();
@@ -156,7 +153,6 @@ class EnergyFlowCard extends HTMLElement {
         }
         this.stopTimer();
     }
-    // ----- Opbouw -----------------------------------------------------------------------------
     get language() {
         return (0, i18n_1.hassLanguage)(this._hass);
     }
@@ -251,7 +247,6 @@ class EnergyFlowCard extends HTMLElement {
             if (!el)
                 continue;
             if (!conn.color) {
-                // Standaardkleur: die van het apparaat aan de andere kant van Home (bij Home-verbindingen), anders de bron.
                 const colorSource = to.role === 'home' ? from : from.role === 'home' ? to : from;
                 el.el.classList.add(`type-${colorSource.type}`);
             }
@@ -395,7 +390,6 @@ class EnergyFlowCard extends HTMLElement {
         const flows = (0, flowHelper_1.computeFlows)(nodes, connections, readings, undefined, { ignoreEntities: true });
         return { readings, flows, diagnostics: { byNode: new Map(), balanceDifferenceWatts: null, unmeteredConsumptionWatts: null } };
     }
-    // ----- Live bijwerken -----------------------------------------------------------------------
     compute() {
         const cfg = this.config;
         const readings = new Map();
@@ -479,7 +473,6 @@ class EnergyFlowCard extends HTMLElement {
                 this.popup.update(model);
         }
     }
-    /** Coalesce rapid Home Assistant state updates into a single paint per animation frame. */
     scheduleUpdate() {
         if (this.updateFrame !== undefined)
             return;
@@ -501,7 +494,6 @@ class EnergyFlowCard extends HTMLElement {
             this.timer = undefined;
         }
     }
-    // ----- Detailweergave -----------------------------------------------------------------------
     openPopup(nodeId) {
         const model = this.popupModel(nodeId);
         if (!model)
@@ -726,7 +718,6 @@ class EnergyFlowCard extends HTMLElement {
     derivedL1Key(node) {
         return `__derived_l1__${node.id}`;
     }
-    /** Live L1 fallback for meters (notably HomeWizard P1) that expose total + L2 + L3 only. */
     derivedLiveL1(node, totalWatts) {
         if (node.type !== 'grid' || node.config.phase_l1_power_entity)
             return null;
@@ -784,7 +775,6 @@ class EnergyFlowCard extends HTMLElement {
             },
         };
     }
-    /** Demo-fasen zijn bewust niet exact gelijk verdeeld, zodat de 3-lijnsgrafiek zichtbaar te testen is. */
     demoPhaseHistory(total) {
         const factors = [0.38, 0.33, 0.29];
         return factors.map((factor, phase) => ({
@@ -842,7 +832,6 @@ class EnergyFlowCard extends HTMLElement {
             this.loadDemoHistoryBundle();
             return;
         }
-        // Een sessie-cache kan een popup onmiddellijk vullen, ook na navigeren/refreshen.
         const restored = this.readHistorySession(node);
         if (restored) {
             this.history.set(node.id, restored);
@@ -851,11 +840,6 @@ class EnergyFlowCard extends HTMLElement {
         }
         await this.ensureHistoryBundle();
     }
-    /**
-     * Eén gezamenlijke history-call voor alle vermogenssensoren van de kaart. Daarna worden
-     * alle nodes op dezelfde 96 tijdstippen opnieuw berekend met exact dezelfde flowlogica als live.
-     * Daardoor krijgt ook een berekende Woning-node een echte 24-uursgrafiek.
-     */
     async ensureHistoryBundle() {
         const cfg = this.config;
         if (!cfg || cfg.demo || !this._hass?.callApi)
@@ -921,8 +905,6 @@ class EnergyFlowCard extends HTMLElement {
                 const points = (0, historyHelper_1.bucketize)(raw.get(id) ?? [], start, end, HISTORY_BUCKETS);
                 series.set(id, new Map(points.map((p) => [p.t, p.v])));
             }
-            // Bewaar de drie netfasen apart. De normale node-history blijft het totale netvermogen tonen;
-            // de popup kan optioneel naar deze drie losse reeksen omschakelen.
             const grid = cfg.nodes.find((n) => n.type === 'grid');
             if (grid) {
                 for (const id of [grid.config.phase_l1_power_entity, grid.config.phase_l2_power_entity, grid.config.phase_l3_power_entity]) {
@@ -968,8 +950,6 @@ class EnergyFlowCard extends HTMLElement {
                 const points = perNode.get(node.id) ?? [];
                 this.storeHistory(node, points.length >= 2 ? { kind: 'ready', points, start, end } : { kind: 'none' }, fetchedAt);
             }
-            // Sommige meters (o.a. HomeWizard P1) publiceren totaal + L2 + L3, maar geen losse L1.
-            // Leid L1 dan historisch af als totaal − L2 − L3, zodat de driefasegrafiek toch compleet is.
             if (grid && !grid.config.phase_l1_power_entity && grid.config.phase_l2_power_entity && grid.config.phase_l3_power_entity) {
                 const total = this.history.get(grid.id)?.state;
                 const l2 = this.phaseHistory.get(grid.config.phase_l2_power_entity);
@@ -1015,12 +995,6 @@ class EnergyFlowCard extends HTMLElement {
         if (model)
             this.popup.update(model);
     }
-    /**
-     * Start de gezamenlijke historie direct op de achtergrond zodra de kaart zichtbaar is.
-     * Home Assistant zet `hass` zeer vaak opnieuw (bij iedere state-update). Daarom mag een
-     * geplande preload hier niet telkens worden geannuleerd en opnieuw gestart: bij snel
-     * wijzigende vermogenssensoren zou de history-call anders eindeloos uitgesteld worden.
-     */
     scheduleHistoryPreload() {
         const cfg = this.config;
         if (!cfg || cfg.demo || !this.isConnected || !this._hass?.callApi || document.hidden)
@@ -1029,15 +1003,12 @@ class EnergyFlowCard extends HTMLElement {
             return;
         if (this.historyBundleFetchedAt && Date.now() - this.historyBundleFetchedAt < HISTORY_TTL_MS)
             return;
-        // Vul eerst alle nog geldige sessiecaches terug. Daardoor zijn popups na een dashboard-
-        // navigatie of refresh direct bruikbaar, terwijl een eventuele netwerkrefresh parallel volgt.
         this.restoreHistorySessionCache();
         this.preloadTimer = window.setTimeout(() => {
             this.preloadTimer = undefined;
             void this.ensureHistoryBundle();
         }, HISTORY_PRELOAD_DELAY_MS);
     }
-    /** Herstelt in één keer de bestaande 5-minuten-cache voor alle nodes. */
     restoreHistorySessionCache() {
         const cfg = this.config;
         if (!cfg)
@@ -1062,8 +1033,6 @@ class EnergyFlowCard extends HTMLElement {
         const entityId = node.config.power_entity ?? node.config.production_entity;
         if (entityId)
             return `${HISTORY_SESSION_PREFIX}${entityId}|${node.invert ? '1' : '0'}`;
-        // Berekende nodes (zoals Woning of een ongemeten backup) zijn afhankelijk van de hele flow-config.
-        // Een compacte configuratiesignatuur voorkomt dat een oude cache bij een andere setup wordt hergebruikt.
         const cfg = this.config;
         if (!cfg)
             return undefined;
@@ -1107,14 +1076,8 @@ class EnergyFlowCard extends HTMLElement {
             window.sessionStorage?.setItem(key, JSON.stringify({ state, fetchedAt }));
         }
         catch {
-            // Opslag kan uitgeschakeld of vol zijn; de geheugen-cache blijft dan gewoon werken.
         }
     }
-    /**
-     * Demo-history wordt in één batch opgebouwd met exact dezelfde tijdas voor alle zichtbare nodes.
-     * Dit voorkomt dat de replay-range leeg raakt doordat afzonderlijk opgebouwde demo-series net
-     * verschillende start-/eindtijden hebben. Dezelfde batch voedt ook de gewone popup-grafieken.
-     */
     loadDemoHistoryBundle() {
         const cfg = this.config;
         if (!cfg?.demo)
@@ -1152,23 +1115,17 @@ class EnergyFlowCard extends HTMLElement {
     }
 }
 exports.EnergyFlowCard = EnergyFlowCard;
-/** Namen boven Home komen boven de node; in de rechte layout staan Home en backup (lijnen boven en onder) ernaast. */
 function labelPositionFor(node, y, homeY, straight) {
     if (straight && (node.role === 'home' || node.type === 'backup'))
         return 'side';
     return y < homeY - 1 ? 'above' : 'below';
 }
 
-};
-__mods["card/styles.js"] = function(module, exports, require){
+},
+"src/card/styles.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.styles = void 0;
-/**
- * Alle kleuren zijn CSS-variabelen met een standaardwaarde, zodat thema's ze kunnen
- * overschrijven: --efc-solar, --efc-grid, --efc-battery, --efc-home, --efc-ev,
- * --efc-generator, --efc-producer, --efc-consumer en --efc-node-bg.
- */
 exports.styles = `
 :host { display: block; }
 
@@ -1424,8 +1381,8 @@ ha-card.fallback {
 }
 `;
 
-};
-__mods["config/CardConfig.js"] = function(module, exports, require){
+},
+"src/config/CardConfig.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ConfigError = void 0;
@@ -1440,7 +1397,6 @@ class ConfigError extends Error {
     }
 }
 exports.ConfigError = ConfigError;
-/** Nodes voor de demo-modus als de gebruiker zelf geen nodes opgeeft. */
 const DEMO_NODES = [
     { name: 'Net', type: 'grid' },
     { name: 'Zonnepanelen', type: 'solar' },
@@ -1464,7 +1420,6 @@ function positiveNumber(value, fallback, key) {
     }
     return value;
 }
-/** Controleert de YAML-configuratie en maakt er Nodes, Connections en Layout van. Gooit een ConfigError bij fouten. */
 function normalizeConfig(raw) {
     if (!isRecord(raw))
         throw new ConfigError('De configuratie is leeg of ongeldig.');
@@ -1569,12 +1524,10 @@ function parseNodes(raw) {
             throw new ConfigError(`Node ${index + 1} (${type}) heeft een "name" nodig.`);
         parsed.push({ config: item, type });
     });
-    // Iedere configuratie heeft precies één Home-node; die wordt automatisch aangemaakt.
     if (parsed.filter((p) => p.type === 'home').length > 1)
         throw new ConfigError('Er mag maar één Home-node zijn.');
     if (!parsed.some((p) => p.type === 'home'))
         parsed.unshift({ config: { type: 'home' }, type: 'home' });
-    // De gebruiker hoeft geen id te kiezen; expliciete id's gaan voor en moeten uniek zijn.
     const taken = new Set(['home']);
     const explicit = parsed.map((p) => {
         if (p.type === 'home')
@@ -1593,7 +1546,6 @@ function parseNodes(raw) {
         return (0, Node_1.createNode)(p.config, p.type, id);
     });
 }
-/** `connected_to` mag alleen bij een verbruiker en kan naar Home, een backup of een andere verbruiker verwijzen. */
 function checkConnectedTo(nodes) {
     const parentOf = (node) => {
         const ref = node.config.connected_to;
@@ -1620,7 +1572,6 @@ function checkConnectedTo(nodes) {
             throw new ConfigError(`Node "${label}": "connected_to" moet naar Home, een backup of een verbruiker verwijzen, niet naar "${ref}".`);
         }
     }
-    // Volg iedere parent-keten. Zo voorkomen we A → B → A (of langere lussen).
     for (const node of nodes) {
         if (node.role !== 'consumer' || node.type === 'backup')
             continue;
@@ -1638,7 +1589,6 @@ function checkConnectedTo(nodes) {
         }
     }
 }
-/** Zoekt een node op id, op naam (hoofdletterongevoelig) of met het woord "home". */
 function findNode(nodes, reference) {
     const ref = reference.trim();
     const lower = ref.toLowerCase();
@@ -1753,7 +1703,6 @@ function parseLayout(raw) {
     if (raw.mode !== undefined && raw.mode !== 'flow' && raw.mode !== 'eniris' && raw.mode !== 'circle' && raw.mode !== 'straight' && raw.mode !== 'auto') {
         throw new ConfigError('"layout.mode" moet "flow", "circle" (rond) of "straight" (recht) zijn.');
     }
-    // v0.7.0 schreef nog een oudere naam weg; behandel die stil als de standaard Flow-weergave zodat bestaande kaarten blijven werken.
     const mode = raw.mode === 'circle' ? 'circle' : raw.mode === 'straight' ? 'straight' : 'flow';
     const positions = {};
     if (raw.positions !== undefined) {
@@ -1769,14 +1718,14 @@ function parseLayout(raw) {
     return { mode, positions };
 }
 
-};
-__mods["demo/DemoEngine.js"] = function(module, exports, require){
+},
+"src/demo/DemoEngine.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.demoReadings = demoReadings;
 const flowHelper_1 = require("../helpers/flowHelper");
 const EntityStatus_1 = require("../types/EntityStatus");
-const DAY_SECONDS = 120; // één "dag" duurt twee minuten, zodat je alles snel ziet gebeuren
+const DAY_SECONDS = 120;
 const BATTERY_SECONDS = 150;
 const wave = (t, period, phase = 0) => Math.sin((2 * Math.PI * t) / period + phase);
 function reading(node, watts, soc) {
@@ -1791,11 +1740,6 @@ function reading(node, watts, soc) {
         r.soc = { status: EntityStatus_1.EntityStatus.Valid, value: Math.round(soc) };
     return r;
 }
-/**
- * Verzint consistente meetwaarden voor een demo: de energiebalans klopt altijd,
- * zodat wat het net levert precies aansluit bij wat de rest produceert en verbruikt.
- * Home krijgt geen eigen waarde; die wordt uit de verbindingen berekend.
- */
 function demoReadings(nodes, t) {
     const out = new Map();
     const phase = (t / DAY_SECONDS) % 1;
@@ -1805,7 +1749,7 @@ function demoReadings(nodes, t) {
     const batteries = nodes.filter((n) => n.type === 'battery');
     const grids = nodes.filter((n) => n.type === 'grid');
     let production = 0;
-    let consumption = 380 + 140 * wave(t, 9); // wat de woning zelf verbruikt
+    let consumption = 380 + 140 * wave(t, 9);
     nodes.forEach((node, i) => {
         let watts = null;
         switch (node.type) {
@@ -1820,7 +1764,7 @@ function demoReadings(nodes, t) {
                 break;
             }
             case 'generator': {
-                watts = 0; // een geldige nul: apparaat staat uit, sensor werkt gewoon
+                watts = 0;
                 break;
             }
             case 'ev_charger': {
@@ -1844,8 +1788,6 @@ function demoReadings(nodes, t) {
                 break;
             }
             case 'backup': {
-                // Een backup telt niet apart mee: de apparaten erachter (of, zonder die, deze waarde) worden getoond;
-                // de kaart rekent een backup met apparaten erachter om naar hun som.
                 watts = 220 + 160 * (0.5 + 0.5 * wave(t, 23));
                 break;
             }
@@ -1859,8 +1801,6 @@ function demoReadings(nodes, t) {
         if (watts !== null)
             out.set(node.id, reading(node, watts));
     });
-    // Maak hiërarchische verbruikers logisch: een parent met kinderen meet minimaal de som van zijn directe kinderen
-    // plus een kleine eigen restlast. Alleen top-level verbruiker-takken tellen mee in de woningbalans.
     const byRef = (ref) => {
         const lower = ref.toLowerCase();
         return nodes.find((n) => n.id === ref) ?? nodes.find((n) => n.name?.toLowerCase() === lower);
@@ -1882,7 +1822,6 @@ function demoReadings(nodes, t) {
             continue;
         consumption += Math.max(0, out.get(node.id)?.watts ?? 0);
     }
-    // Batterij: laadvermogen volgt de afgeleide van de laadtoestand, zodat de cijfers kloppen met elkaar.
     let charge = 0;
     const soc = 55 + 35 * wave(t, BATTERY_SECONDS);
     if (batteries.length > 0) {
@@ -1890,14 +1829,13 @@ function demoReadings(nodes, t) {
         for (const b of batteries)
             out.set(b.id, reading(b, -charge / batteries.length, soc));
     }
-    // Het net vult aan wat er ontbreekt (positief = afname, negatief = teruglevering).
     const gridTotal = consumption + charge - production;
     grids.forEach((g, i) => out.set(g.id, reading(g, i === 0 ? gridTotal : 0)));
     return out;
 }
 
-};
-__mods["editor/EnergyFlowCardEditor.js"] = function(module, exports, require){
+},
+"src/editor/EnergyFlowCardEditor.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EnergyFlowCardEditor = void 0;
@@ -1980,30 +1918,22 @@ h3 { margin: 0; font-size: 14px; font-weight: 600; }
 .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; }
 `;
-/** JSON met gesorteerde sleutels: twee configuraties met dezelfde inhoud zijn dan altijd gelijk, ook bij een andere sleutelvolgorde. */
 function stable(value) {
     return JSON.stringify(value, (_key, v) => v && typeof v === 'object' && !Array.isArray(v)
         ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
         : v);
 }
-/**
- * Wizard in vier stappen: 1 Apparaten, 2 Verbindingen, 3 Prijzen, 4 Voorbeeld.
- * De wizard schrijft gewone kaart-YAML (inclusief gegenereerde ids en connections);
- * wie liever direct YAML schrijft, kan de wizard gewoon overslaan.
- */
 class EnergyFlowCardEditor extends HTMLElement {
     constructor() {
         super();
         this.config = { type: 'custom:energy-flow-card-pro', nodes: [] };
         this.step = 1;
         this.lastEmitted = '';
-        /** Welke uitklapsecties ("Geavanceerd") openstaan; overleeft het opnieuw tekenen van de editor. */
         this.openSections = new Set();
         this.attachShadow({ mode: 'open' });
     }
     setConfig(config) {
         const incoming = stable(config);
-        // Echo van onze eigen wijziging: niet opnieuw tekenen (focus en open keuzelijsten blijven behouden).
         if (incoming === this.lastEmitted || incoming === stable(this.config))
             return;
         this.config = structuredClone(config);
@@ -2021,7 +1951,6 @@ class EnergyFlowCardEditor extends HTMLElement {
     get uiLang() {
         return (0, i18n_1.hassLanguage)(this._hass);
     }
-    // ----- Config bijwerken ---------------------------------------------------------------------
     get nodes() {
         if (!Array.isArray(this.config.nodes))
             this.config.nodes = [];
@@ -2047,8 +1976,6 @@ class EnergyFlowCardEditor extends HTMLElement {
     commit() {
         this.ensureIds();
         this.lastEmitted = stable(this.config);
-        // Een kopie, geen verwijzing naar ons eigen (steeds aangepaste) object: Home Assistant herkent een wijziging
-        // alleen aan een nieuw object. Anders komen na de eerste wijziging voorbeeld en opslaan niet meer mee.
         this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: structuredClone(this.config) }, bubbles: true, composed: true }));
     }
     resolve() {
@@ -2059,7 +1986,6 @@ class EnergyFlowCardEditor extends HTMLElement {
             return err instanceof Error ? err.message : String(err);
         }
     }
-    // ----- Opbouw -------------------------------------------------------------------------------
     render() {
         const wizard = (0, dom_1.html)('div', { class: 'wizard' }, this.renderTabs());
         if (this.step === 1)
@@ -2074,7 +2000,6 @@ class EnergyFlowCardEditor extends HTMLElement {
         this.shadowRoot.replaceChildren((0, dom_1.html)('style', {}, editorStyles), wizard);
         this.applyHassToPickers();
     }
-    /** Geeft alle Home Assistant entity-pickers het actuele hass-object zonder de editor opnieuw te tekenen. */
     applyHassToPickers() {
         if (!this._hass)
             return;
@@ -2109,8 +2034,6 @@ class EnergyFlowCardEditor extends HTMLElement {
         this.render();
     }
     entityInput(value, powerOnly, onChange) {
-        // Gebruik de native Home Assistant entity-picker. Die blijft open tijdens zoeken/selecteren en
-        // gedraagt zich hetzelfde als selectors in automatiseringen en andere HA-editors.
         const picker = document.createElement('ha-entity-picker');
         picker.value = value ?? '';
         picker.includeDomains = powerOnly ? ['sensor', 'number', 'input_number'] : ['sensor', 'number', 'input_number'];
@@ -2123,7 +2046,6 @@ class EnergyFlowCardEditor extends HTMLElement {
         });
         return picker;
     }
-    /** Een uitklapsectie die open blijft als de editor opnieuw getekend wordt (bijvoorbeeld na een typewijziging). */
     section(key, summary, ...content) {
         const details = (0, dom_1.html)('details', {}, (0, dom_1.html)('summary', {}, summary), ...content);
         details.open = this.openSections.has(key);
@@ -2145,7 +2067,6 @@ class EnergyFlowCardEditor extends HTMLElement {
             delete node[key];
         this.commit();
     }
-    // ----- Stap 1: Apparaten --------------------------------------------------------------------
     renderDevices() {
         const lang = this.uiLang;
         const wrap = (0, dom_1.html)('div', { class: 'stack' }, (0, dom_1.html)('p', { class: 'hint' }, (0, i18n_1.t)('ed_home_auto', lang)));
@@ -2176,7 +2097,6 @@ class EnergyFlowCardEditor extends HTMLElement {
         name.addEventListener('input', () => {
             node.name = name.value;
         });
-        // Config pas doorgeven als het veld klaar is. Zo kan Home Assistant de editor niet na de eerste letter vervangen.
         name.addEventListener('change', () => {
             node.name = name.value.trim();
             this.commit();
@@ -2219,8 +2139,6 @@ class EnergyFlowCardEditor extends HTMLElement {
             this.commit();
         });
         advanced.append((0, dom_1.html)('label', { class: 'check' }, invert, (0, i18n_1.t)('ed_invert', lang)));
-        // Verbruikers kunnen direct aan Home, achter een backup of achter een andere verbruiker hangen.
-        // Kandidaten die een lus zouden maken worden niet aangeboden.
         const parentCandidates = this.nodes.filter((candidate) => {
             if (candidate === node)
                 return false;
@@ -2267,7 +2185,6 @@ class EnergyFlowCardEditor extends HTMLElement {
         }
         select.addEventListener('change', () => {
             if (select.value === CUSTOM_ICON) {
-                // Eerst alleen opnieuw tekenen; de gebruiker krijgt daarna het vrije mdi:-veld.
                 if (!current || presetValues.has(current))
                     onChange('mdi:');
                 return;
@@ -2333,14 +2250,12 @@ class EnergyFlowCardEditor extends HTMLElement {
         const name = (0, i18n_1.t)('type_consumer', lang);
         const node = { id: (0, Node_1.generateId)(name, taken), name, type: 'consumer' };
         this.nodes.push(node);
-        // Bestaat er al een handmatige lijst met verbindingen, dan sluit een nieuw apparaat automatisch aan op Home.
         if (this.config.connections)
             this.config.connections.push(this.homeConnection(node.id, 'consumer'));
         this.commit();
         this.render();
         this.focusLastDevice();
     }
-    /** Na "apparaat toevoegen": scrol naar het nieuwe apparaat en zet de cursor in het naamveld. */
     focusLastDevice() {
         const devices = this.shadowRoot?.querySelectorAll('.device');
         const last = devices?.[devices.length - 1];
@@ -2351,7 +2266,6 @@ class EnergyFlowCardEditor extends HTMLElement {
         name.select();
         last.scrollIntoView({ block: 'nearest' });
     }
-    /** Zou `node` onder `candidate` hangen een lus maken? */
     wouldCreateParentLoop(node, candidate) {
         const nodeId = node.id ?? '';
         const nodeName = node.name?.toLowerCase();
@@ -2369,7 +2283,6 @@ class EnergyFlowCardEditor extends HTMLElement {
         }
         return false;
     }
-    /** Hang een apparaat aan Home, een backup of een andere verbruiker, ook bij handmatige verbindingen. */
     setParent(node, parentId) {
         if (parentId === 'home')
             delete node.connected_to;
@@ -2405,7 +2318,6 @@ class EnergyFlowCardEditor extends HTMLElement {
         if (index < 0)
             return;
         const childIds = [];
-        // Apparaten die achter deze node hingen, hangen daarna weer aan Home.
         for (const other of this.nodes) {
             if (other !== node && other.connected_to && (other.connected_to === node.id || other.connected_to === node.name)) {
                 delete other.connected_to;
@@ -2434,10 +2346,8 @@ class EnergyFlowCardEditor extends HTMLElement {
     changeType(node, type) {
         const previousRole = (0, NodeType_1.roleOf)((0, NodeType_1.normalizeType)(node.type) ?? 'consumer');
         node.type = type;
-        // Alleen gewone verbruikers kunnen een parent kiezen.
         if ((0, NodeType_1.roleOf)(type) !== 'consumer' || type === 'backup')
             delete node.connected_to;
-        // Als deze node geen verbruiker/backup meer is, mogen bestaande kinderen er niet achter blijven hangen.
         if ((0, NodeType_1.roleOf)(type) !== 'consumer') {
             const childIds = [];
             for (const other of this.nodes) {
@@ -2453,7 +2363,6 @@ class EnergyFlowCardEditor extends HTMLElement {
                     this.config.connections.push({ from: 'home', to: childId });
             }
         }
-        // Verbruikers ontvangen van Home, bronnen sturen naar Home: draai bestaande Home-verbindingen indien nodig om.
         const resolved = this.resolve();
         if (previousRole !== (0, NodeType_1.roleOf)(type) && typeof resolved !== 'string' && this.config.connections) {
             const me = resolved.nodes.find((n) => n.config === node);
@@ -2469,16 +2378,13 @@ class EnergyFlowCardEditor extends HTMLElement {
         }
         this.commit();
         this.render();
-        // Het opnieuw tekenen haalt de focus weg; zet die terug op het keuzemenu van dit apparaat.
         const devices = [...(this.shadowRoot?.querySelectorAll('.device') ?? [])];
         const index = this.nodes.filter((n) => (0, NodeType_1.normalizeType)(n.type) !== 'home').indexOf(node);
         devices[index]?.querySelector('select')?.focus();
     }
-    /** Verbinding tussen een node en Home in de natuurlijke richting voor dat type. */
     homeConnection(nodeId, type) {
         return (0, NodeType_1.roleOf)(type) === 'consumer' ? { from: 'home', to: nodeId } : { from: nodeId, to: 'home' };
     }
-    // ----- Stap 2: Verbindingen -----------------------------------------------------------------
     renderConnections() {
         const lang = this.uiLang;
         const resolved = this.resolve();
@@ -2521,7 +2427,6 @@ class EnergyFlowCardEditor extends HTMLElement {
         wrap.append((0, dom_1.html)('div', { class: 'row' }, this.field((0, i18n_1.t)('ed_from', lang), from), this.field((0, i18n_1.t)('ed_to', lang), to), add));
         return wrap;
     }
-    /** Zet de handmatige lijst met verbindingen klaar (afgeleid van de standaardverbindingen als hij nog niet bestaat). */
     explicitConnections(resolved) {
         if (!this.config.connections)
             this.config.connections = resolved.connections.map((c) => ({ from: c.from, to: c.to }));
@@ -2639,7 +2544,6 @@ class EnergyFlowCardEditor extends HTMLElement {
         wrap.append(this.field((0, i18n_1.t)('pricing_import_entity', lang), importEntity), this.field((0, i18n_1.t)('pricing_export_entity', lang), exportEntity));
         return wrap;
     }
-    // ----- Stap 4: Voorbeeld --------------------------------------------------------------------
     renderColors() {
         const lang = this.uiLang;
         const defaults = {
@@ -2651,7 +2555,6 @@ class EnergyFlowCardEditor extends HTMLElement {
             ['consumer', 'color_consumer'], ['ev', 'color_ev'], ['backup', 'color_backup'], ['generator', 'color_generator'], ['producer', 'color_producer'],
         ];
         const isNl = lang === 'nl';
-        // Beperkte, vaste palette: genoeg keuze zonder vrije kleurkiezer of onoverzichtelijke selectvelden.
         const presets = [
             ['#ef5350', isNl ? 'Rood' : 'Red'],
             ['#ec407a', isNl ? 'Roze' : 'Pink'],
@@ -2709,7 +2612,6 @@ class EnergyFlowCardEditor extends HTMLElement {
                 dot.addEventListener('click', () => setColor(key, value));
                 palette.append(dot);
             }
-            // Een kleur uit 0.15.0/0.15.1 blijft bruikbaar, maar er kunnen geen nieuwe vrije kleuren worden gekozen.
             if (current && currentValue !== defaults[key].toLowerCase() && !presets.some(([value]) => value.toLowerCase() === currentValue)) {
                 const legacy = (0, dom_1.html)('button', {
                     class: 'color-dot legacy selected', type: 'button', role: 'radio', 'aria-checked': 'true',
@@ -2786,8 +2688,8 @@ class EnergyFlowCardEditor extends HTMLElement {
 }
 exports.EnergyFlowCardEditor = EnergyFlowCardEditor;
 
-};
-__mods["helpers/diagnosticsHelper.js"] = function(module, exports, require){
+},
+"src/helpers/diagnosticsHelper.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.computeDiagnostics = computeDiagnostics;
@@ -2874,11 +2776,6 @@ function sourceBalanceAtHome(homeId, nodes, connections, flows) {
     }
     return { value, known, total };
 }
-/**
- * Lightweight live diagnostics. It deliberately avoids guessing electrical faults: it only reports
- * sensor health, a measurable Home/source mismatch and how much Home load is not represented by
- * explicitly configured consumer nodes.
- */
 function computeDiagnostics(nodes, connections, readings, sourceFlows, hass, options = {}, now = Date.now()) {
     const byNode = new Map();
     const staleMinutes = options.staleMinutes ?? DEFAULT_STALE_MINUTES;
@@ -2917,7 +2814,6 @@ function computeDiagnostics(nodes, connections, readings, sourceFlows, hass, opt
         const homeReading = readings.get(home.id);
         const measuredHome = !!home.config.power_entity;
         if (homeReading?.watts !== null && homeReading?.watts !== undefined) {
-            // Only call this a true balance diagnostic when Home is independently measured.
             if (measuredHome) {
                 const source = sourceBalanceAtHome(home.id, nodes, connections, sourceFlows);
                 if (source.total > 0 && source.known === source.total) {
@@ -2932,8 +2828,6 @@ function computeDiagnostics(nodes, connections, readings, sourceFlows, hass, opt
                     }
                 }
             }
-            // Sum only consumer branches connected directly to Home. Children behind another measured consumer
-            // are a breakdown of that parent and must not be counted twice. Backup is an aggregate and excluded.
             const directConsumerIds = new Set(connections
                 .filter((c) => c.from === home.id)
                 .map((c) => c.to));
@@ -2974,8 +2868,8 @@ function highestSeverity(items) {
     return 'info';
 }
 
-};
-__mods["helpers/energyStatsHelper.js"] = function(module, exports, require){
+},
+"src/helpers/energyStatsHelper.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.fetchEnergyStats = fetchEnergyStats;
@@ -2997,7 +2891,7 @@ function rangeFor(period, now = Date.now()) {
     }
     if (period === 'week') {
         d.setHours(0, 0, 0, 0);
-        const weekday = (d.getDay() + 6) % 7; // maandag = 0
+        const weekday = (d.getDay() + 6) % 7;
         d.setDate(d.getDate() - weekday);
         return { start: d.getTime(), end: now };
     }
@@ -3061,7 +2955,7 @@ function deltaForEntity(hass, entityId, states, start, end) {
             continue;
         let delta = p.v - previous;
         if (delta < 0)
-            delta = p.v; // total_increasing reset / daily reset
+            delta = p.v;
         if (delta > 0)
             total += delta;
         previous = p.v;
@@ -3174,8 +3068,8 @@ function demoEnergyStats(period, now = Date.now()) {
     };
 }
 
-};
-__mods["helpers/flowHelper.js"] = function(module, exports, require){
+},
+"src/helpers/flowHelper.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.flowToHome = flowToHome;
@@ -3186,7 +3080,6 @@ exports.computeHomeReading = computeHomeReading;
 exports.applyBackupReadings = applyBackupReadings;
 const EntityStatus_1 = require("../types/EntityStatus");
 const stateHelper_1 = require("./stateHelper");
-/** Energie die deze node richting Home stuurt (negatief = neemt energie van Home af). */
 function flowToHome(node, reading) {
     if (reading.watts === null)
         return null;
@@ -3211,7 +3104,6 @@ function isCharging(node, watts) {
         return watts > 0;
     return false;
 }
-/** Leest het vermogen van één node live uit Home Assistant. */
 function readNode(node, hass) {
     const cfg = node.config;
     let base;
@@ -3250,10 +3142,6 @@ function demand(node, reading) {
     const f = flowToHome(node, reading);
     return f === null ? null : Math.max(0, -f);
 }
-/**
- * Bepaalt per verbinding hoeveel energie er stroomt: positief = van `from` naar `to`,
- * 0 = stil, null = onbekend (ongeldige sensor).
- */
 function computeFlows(nodes, connections, readings, hass, options = {}) {
     const byId = new Map(nodes.map((n) => [n.id, n]));
     const result = new Map();
@@ -3269,9 +3157,6 @@ function computeFlows(nodes, connections, readings, hass, options = {}) {
         else {
             const fromReading = readings.get(from.id);
             const toReading = readings.get(to.id);
-            // Home en hiërarchische verbruikers hebben een duidelijke parent → child richting.
-            // Voor parent → child gebruiken we altijd het childvermogen als takvermogen; het parentvermogen blijft
-            // het gemeten totaal op de inkomende tak en wordt daardoor niet dubbel bij Home opgeteld.
             const isConsumerHub = (node) => node.type === 'backup' || node.role === 'consumer';
             const isChild = (node) => node.role === 'consumer' && node.type !== 'backup';
             if (to.role === 'home' && fromReading) {
@@ -3289,7 +3174,6 @@ function computeFlows(nodes, connections, readings, hass, options = {}) {
                 value = flowToHome(from, fromReading);
             }
             else if (fromReading && toReading) {
-                // Tussen twee nodes zonder Home: schat de stroom als het kleinste van aanbod en vraag.
                 const fwdSupply = supply(from, fromReading);
                 const fwdDemand = demand(to, toReading);
                 const backSupply = supply(to, toReading);
@@ -3313,14 +3197,6 @@ function computeFlows(nodes, connections, readings, hass, options = {}) {
     }
     return result;
 }
-/**
- * Wat er in de woning gebeurt, berekend uit wat er binnenkomt: net (afname min teruglevering) + zon
- * + batterij (ontladen min laden) + generator. De losse apparaten (verbruikers, backup) zijn een deel van
- * dat verbruik en worden er dus niet vanaf getrokken. Home heeft daarom geen eigen sensor.
- *
- * Zonder net, zon of batterij is er niets om uit te rekenen; dan is Home de som van wat de apparaten gebruiken.
- * Is een stroom van een bron onbekend (ongeldige sensor), dan is de uitkomst onbetrouwbaar ("?").
- */
 function computeHomeReading(home, nodes, connections, flows) {
     const byId = new Map(nodes.map((n) => [n.id, n]));
     const unknown = { status: EntityStatus_1.EntityStatus.Invalid, watts: null, charging: false };
@@ -3354,9 +3230,6 @@ function computeHomeReading(home, nodes, connections, flows) {
     }
     if (!hasSource && !hasConsumer)
         return unknown;
-    // Een ontbrekende losse sensor maakt niet meer de complete woning ongeldig. Als er minstens één
-    // bruikbare bronstroom is tonen we de bekende energiebalans; zonder bronnen vallen we terug op de
-    // bekende verbruikers. Wie een exacte woningwaarde wil kan met een eigen woningsensor instellen.
     if (hasSource && knownSources === 0) {
         if (knownConsumers === 0)
             return unknown;
@@ -3368,11 +3241,6 @@ function computeHomeReading(home, nodes, connections, flows) {
     const watts = Math.max(0, hasSource ? supply : demand);
     return { status: watts === 0 ? EntityStatus_1.EntityStatus.Zero : EntityStatus_1.EntityStatus.Valid, watts, charging: false };
 }
-/**
- * Een backup die de gebruiker niet zelf meet, gebruikt precies wat de apparaten erachter gebruiken.
- * Heeft de backup een eigen sensor (`power_entity`), dan geldt die: de omvormer meet de backup-uitgang dan zelf.
- * In demo-modus blijft de verzonnen waarde staan zolang er geen apparaten achter hangen.
- */
 function applyBackupReadings(nodes, connections, readings, demo) {
     const byId = new Map(nodes.map((n) => [n.id, n]));
     for (const backup of nodes) {
@@ -3408,8 +3276,8 @@ function applyBackupReadings(nodes, connections, readings, demo) {
     }
 }
 
-};
-__mods["helpers/groupHelper.js"] = function(module, exports, require){
+},
+"src/helpers/groupHelper.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.groupedGroups = groupedGroups;
@@ -3432,10 +3300,6 @@ function createGroupNode(group) {
         group_members: group.memberIds,
     }, group.type, id);
 }
-/**
- * Maakt alleen voor de presentatie een compacte graaf. Onderliggende nodes blijven in de
- * echte configuratie bestaan, zodat live berekeningen en history dezelfde data blijven gebruiken.
- */
 function buildDisplayGraph(cfg) {
     const active = groupedGroups(cfg);
     if (active.length === 0)
@@ -3458,7 +3322,6 @@ function buildDisplayGraph(cfg) {
     }
     return { nodes, connections, groupNodes };
 }
-/** Sommeer groepsleden. Bekende waarden worden opgeteld; pas als niets bruikbaar is wordt de groep '?'. */
 function applyGroupReadings(groups, groupNodes, readings) {
     for (const group of groups) {
         if (group.display !== 'grouped')
@@ -3481,8 +3344,8 @@ function applyGroupReadings(groups, groupNodes, readings) {
     }
 }
 
-};
-__mods["helpers/historyHelper.js"] = function(module, exports, require){
+},
+"src/helpers/historyHelper.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.fetchHistoryBatch = fetchHistoryBatch;
@@ -3491,11 +3354,6 @@ exports.bucketize = bucketize;
 exports.unitFactor = unitFactor;
 const stateHelper_1 = require("./stateHelper");
 const HOUR = 3_600_000;
-/**
- * Haalt de geschiedenis van meerdere vermogenssensoren in één Home Assistant-request op.
- * Alle waarden worden direct omgerekend naar W, zodat de kaart daarna één gezamenlijke
- * tijdlijn kan opbouwen voor nodes, verbindingen en de berekende Woning-node.
- */
 async function fetchHistoryBatch(hass, entityIds, hours, now = Date.now()) {
     const uniqueIds = [...new Set(entityIds.filter(Boolean))];
     const result = new Map(uniqueIds.map((id) => [id, []]));
@@ -3510,8 +3368,6 @@ async function fetchHistoryBatch(hass, entityIds, hours, now = Date.now()) {
     const response = await hass.callApi('GET', path);
     for (let index = 0; index < (response ?? []).length; index++) {
         const states = response?.[index] ?? [];
-        // Bij minimal_response staat entity_id doorgaans alleen op het eerste item. Als HA dit
-        // niet terugstuurt, valt de API-volgorde terug op de volgorde uit filter_entity_id.
         const entityId = states.find((s) => typeof s.entity_id === 'string')?.entity_id ?? uniqueIds[index];
         if (!entityId || !result.has(entityId))
             continue;
@@ -3527,19 +3383,12 @@ async function fetchHistoryBatch(hass, entityIds, hours, now = Date.now()) {
     }
     return result;
 }
-/** Achterwaarts compatibele single-entity helper. */
 async function fetchHistory(hass, entityId, hours, unitFactorOverride, invert, now = Date.now()) {
     const batch = await fetchHistoryBatch(hass, [entityId], hours, now);
-    // `fetchHistoryBatch` gebruikt de actuele HA-eenheid. De oude API accepteerde expliciet
-    // een factor; pas alleen het verschil toe zodat bestaande tests/callers correct blijven.
     const actualFactor = unitFactor(hass.states[entityId]?.attributes.unit_of_measurement);
     const ratio = actualFactor === 0 ? 1 : unitFactorOverride / actualFactor;
     return (batch.get(entityId) ?? []).map((p) => ({ t: p.t, v: (invert ? -p.v : p.v) * ratio }));
 }
-/**
- * Brengt een onregelmatige reeks terug tot een vast aantal punten door per interval de
- * laatste bekende waarde vast te houden (zoals een sensor werkt: waarde geldt tot de volgende).
- */
 function bucketize(points, start, end, buckets) {
     if (points.length === 0 || buckets < 2 || end <= start)
         return [];
@@ -3559,7 +3408,6 @@ function bucketize(points, start, end, buckets) {
     }
     return out;
 }
-/** Eenheidsfactor naar W voor een entiteit, op basis van haar eenheid. */
 function unitFactor(unit) {
     const u = typeof unit === 'string' ? unit.trim().toLowerCase() : '';
     if (u === 'kw')
@@ -3569,13 +3417,12 @@ function unitFactor(unit) {
     return 1;
 }
 
-};
-__mods["helpers/i18n.js"] = function(module, exports, require){
+},
+"src/helpers/i18n.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.t = t;
 exports.hassLanguage = hassLanguage;
-/** Alle teksten van de kaart, in het Nederlands en het Engels. */
 const nl = {
     home: "Woning",
     grid: "Net",
@@ -3972,21 +3819,16 @@ const en = {
     replay_no_history: "Not enough history for replay",
     mobile_focus_back: "Back to previous level",
 };
-/**
- * Geeft de tekst voor `key` in de taal van Home Assistant (`hass.language`).
- * Nederlands als de taal met "nl" begint, anders Engels; onbekende sleutels vallen terug op het Engels en dan op de sleutel zelf.
- */
 function t(key, language) {
     const dictionary = language?.toLowerCase().startsWith('nl') ? nl : en;
     return dictionary[key] ?? en[key] ?? key;
 }
-/** Leest de actieve frontendtaal van Home Assistant. `locale.language` krijgt voorrang, met `language` als fallback. */
 function hassLanguage(hass) {
     return hass?.locale?.language ?? hass?.language;
 }
 
-};
-__mods["helpers/mobileFocusHelper.js"] = function(module, exports, require){
+},
+"src/helpers/mobileFocusHelper.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.descendantConsumerIds = descendantConsumerIds;
@@ -4001,7 +3843,6 @@ function childConnections(id, nodesById, connections) {
         return !!child && child.role === 'consumer' && child.id !== id;
     });
 }
-/** All consumer descendants below a node, in breadth-first order. */
 function descendantConsumerIds(id, nodes, connections) {
     const byId = new Map(nodes.map((n) => [n.id, n]));
     const out = [];
@@ -4026,11 +3867,6 @@ function hasFocusableChildren(id, nodes, connections) {
     const byId = new Map(nodes.map((n) => [n.id, n]));
     return childConnections(id, byId, connections).length > 0;
 }
-/**
- * Compact mobile graph: Home shows only its direct neighbours. Focusing a consumer/backup
- * shows that node as the centre plus its complete descendant subtree. This keeps the main
- * mobile overview readable while still exposing the whole branch after one tap.
- */
 function buildMobileFocusGraph(nodes, connections, requestedFocusId) {
     const byId = new Map(nodes.map((n) => [n.id, n]));
     const home = nodes.find((n) => n.role === 'home') ?? nodes[0];
@@ -4063,16 +3899,12 @@ function buildMobileFocusGraph(nodes, connections, requestedFocusId) {
     };
 }
 
-};
-__mods["helpers/phaseHelper.js"] = function(module, exports, require){
+},
+"src/helpers/phaseHelper.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deriveL1Power = deriveL1Power;
 exports.deriveL1History = deriveL1History;
-/**
- * HomeWizard/P1 setups may expose total grid power plus L2 and L3, without a separate L1 entity.
- * In that case L1 is exactly the remainder of the measured total.
- */
 function deriveL1Power(total, l2, l3) {
     if (total === null || l2 === null || l3 === null)
         return null;
@@ -4080,7 +3912,6 @@ function deriveL1Power(total, l2, l3) {
         return null;
     return total - l2 - l3;
 }
-/** Derives an L1 history series from aligned total/L2/L3 history buckets. */
 function deriveL1History(total, l2, l3) {
     const l2ByTime = new Map(l2.map((point) => [point.t, point.v]));
     const l3ByTime = new Map(l3.map((point) => [point.t, point.v]));
@@ -4097,8 +3928,8 @@ function deriveL1History(total, l2, l3) {
     return result;
 }
 
-};
-__mods["helpers/pricingHelper.js"] = function(module, exports, require){
+},
+"src/helpers/pricingHelper.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.readPrices = readPrices;
@@ -4224,17 +4055,13 @@ function integrateCumulativeEnergy(energyPoints, fallbackPrice, pricePoints) {
         const current = energyPoints[i];
         let delta = current.v - previous.v;
         if (delta < 0)
-            delta = current.v; // total_increasing reset
+            delta = current.v;
         if (delta <= 0)
             continue;
         total += delta * priceAt(current.t);
     }
     return total;
 }
-/**
- * Calculate today's signed grid financial balance from cumulative import/export energy.
- * Positive = net feed-in revenue. Negative = net import cost.
- */
 async function fetchGridFinancialsRange(hass, importEnergyEntity, exportEnergyEntity, pricing, start, end = Date.now()) {
     if (!hass.callApi || pricing.mode === 'none')
         return null;
@@ -4284,25 +4111,22 @@ async function fetchGridFinancialsRange(hass, importEnergyEntity, exportEnergyEn
         return null;
     }
 }
-/** Calculate today's signed grid financial balance. */
 async function fetchTodayGridFinancials(hass, importEnergyEntity, exportEnergyEntity, pricing, now = Date.now()) {
     const startDate = new Date(now);
     startDate.setHours(0, 0, 0, 0);
     return fetchGridFinancialsRange(hass, importEnergyEntity, exportEnergyEntity, pricing, startDate.getTime(), now);
 }
-/** Backwards-compatible helper: feed-in revenue only. */
 async function fetchTodayExportRevenue(hass, exportEnergyEntity, pricing, now = Date.now()) {
     const result = await fetchTodayGridFinancials(hass, undefined, exportEnergyEntity, pricing, now);
     return result?.exportRevenue ?? null;
 }
 
-};
-__mods["helpers/replayHelper.js"] = function(module, exports, require){
+},
+"src/helpers/replayHelper.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.nearestHistoryPoint = nearestHistoryPoint;
 exports.replayRange = replayRange;
-/** Finds the closest available history point to a requested timestamp. */
 function nearestHistoryPoint(points, timestamp) {
     if (points.length === 0)
         return undefined;
@@ -4330,8 +4154,8 @@ function replayRange(series) {
     return end > start ? { start, end } : undefined;
 }
 
-};
-__mods["helpers/stateHelper.js"] = function(module, exports, require){
+},
+"src/helpers/stateHelper.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.parsePower = parsePower;
@@ -4341,12 +4165,7 @@ exports.readNumber = readNumber;
 exports.formatPower = formatPower;
 exports.formatPercent = formatPercent;
 const EntityStatus_1 = require("../types/EntityStatus");
-// Home Assistant gebruikt een punt als decimaalteken; alles anders is voor ons geen getal.
 const NUMBER_PATTERN = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
-/**
- * Zet een Home Assistant-state om in een getal, in W als `unit` "kW" of "MW" is.
- * Geeft null bij alles wat geen gewoon getal is ("unknown", "unavailable", "", "abc").
- */
 function parsePower(value, unit) {
     let n;
     if (typeof value === 'number') {
@@ -4382,7 +4201,6 @@ function getEntityStatus(entity) {
         return EntityStatus_1.EntityStatus.Invalid;
     return value === 0 ? EntityStatus_1.EntityStatus.Zero : EntityStatus_1.EntityStatus.Valid;
 }
-/** Leest het vermogen van een entiteit in W. */
 function readPower(hass, entityId) {
     if (!hass || !entityId)
         return { status: EntityStatus_1.EntityStatus.Invalid, value: null };
@@ -4392,7 +4210,6 @@ function readPower(hass, entityId) {
         return { status, value: null };
     return { status, value: parsePower(entity.state, entity.attributes?.unit_of_measurement) };
 }
-/** Leest een gewoon getal (bijvoorbeeld een percentage), zonder eenheidsomrekening. */
 function readNumber(hass, entityId) {
     if (!hass || !entityId)
         return { status: EntityStatus_1.EntityStatus.Invalid, value: null };
@@ -4408,7 +4225,6 @@ function readNumber(hass, entityId) {
         return { status: EntityStatus_1.EntityStatus.Invalid, value: null };
     return { status: value === 0 ? EntityStatus_1.EntityStatus.Zero : EntityStatus_1.EntityStatus.Valid, value };
 }
-/** 4250 → "4250 W" (of "4.25 kW" bij `kw`, en bij `auto` vanaf 1000 W). Het teken wordt niet getoond. */
 function formatPower(watts, format = 'w') {
     const abs = Math.abs(watts);
     if (format === 'kw' || (format === 'auto' && abs >= 1000))
@@ -4423,8 +4239,8 @@ function round(value, decimals) {
     return String(Math.round(value * factor) / factor);
 }
 
-};
-__mods["index.js"] = function(module, exports, require){
+},
+"src/index.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const EnergyFlowCard_1 = require("./card/EnergyFlowCard");
@@ -4442,10 +4258,10 @@ if (!window.customCards.some((c) => c.type === 'energy-flow-card-pro')) {
         preview: true,
     });
 }
-console.info('%c ENERGY-FLOW-CARD-PRO %c 0.18.0 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
+console.info('%c ENERGY-FLOW-CARD-PRO %c 1.0.0 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
 
-};
-__mods["layout/AutoLayout.js"] = function(module, exports, require){
+},
+"src/layout/AutoLayout.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.STRAIGHT_ROW_GAP = exports.HOME_RADIUS = exports.NODE_RADIUS = void 0;
@@ -4453,15 +4269,7 @@ exports.computeLayout = computeLayout;
 const Connection_1 = require("../models/Connection");
 exports.NODE_RADIUS = 38;
 exports.HOME_RADIUS = 46;
-/** Afstand tussen twee rijen in de rechte layout; de rechte lijnen buigen halverwege deze afstand af. */
 exports.STRAIGHT_ROW_GAP = 176;
-/**
- * Drie weergaven:
- * - "flow" (standaard): energiestromen centraal; productie boven, net links, opslag rechts, verbruikers onder.
- * - "circle": vaste plekken rond Home.
- * - "straight": klassieke boven-naar-beneden weergave.
- * De kaart is altijd los van Node en Connection: dit bepaalt alleen waar iets staat.
- */
 function computeLayout(nodes, layout = {}, connections) {
     const mode = layout.mode === 'circle' ? 'circle' : layout.mode === 'straight' ? 'straight' : 'flow';
     const links = connections ?? (0, Connection_1.defaultConnections)([...nodes]);
@@ -4470,7 +4278,6 @@ function computeLayout(nodes, layout = {}, connections) {
     const others = nodes.filter((n) => n.role !== 'home');
     const auto = others.filter((n) => !manualFor(n));
     const base = mode === 'circle' ? circleLayout(nodes, auto, links) : mode === 'straight' ? straightLayout(nodes, auto, links) : flowLayout(nodes, auto, links);
-    // Handmatige posities (in % van de kaart) gaan altijd voor.
     for (const n of others) {
         const p = manualFor(n);
         if (p)
@@ -4478,7 +4285,6 @@ function computeLayout(nodes, layout = {}, connections) {
     }
     return { ...base, mode };
 }
-/** Bovenliggende node van een verbruiker, voor hiërarchische branches. Home wordt als root behandeld en niet teruggegeven. */
 function consumerParentOf(node, byId, links) {
     if (node.role !== 'consumer' || node.type === 'backup')
         return undefined;
@@ -4496,12 +4302,8 @@ function consumerChildrenOf(node, byId, links) {
         .map((c) => byId.get(c.to))
         .filter((child) => !!child && child.role === 'consumer' && child.type !== 'backup');
 }
-// ----- Rond -----------------------------------------------------------------------------------
-/** Straal van de eerste ring rond Home. */
 const RING_1 = 172;
-/** Ruimte tussen de buitenste node en de rand van de kaart (node-straal + naam en ondertitel). */
 const MARGIN = 92;
-/** Minimale afstand tussen twee ringen, en tussen buren op een buitenring. */
 const RING_GAP = 105;
 const SLOT_SPACING = 110;
 function groupOf(node) {
@@ -4515,7 +4317,6 @@ function groupOf(node) {
         return 'producer';
     return 'device';
 }
-/** Vaste plekken (hoek in graden, 0 = boven, met de klok mee): zon boven, net links, batterij onder, backup rechts. */
 const ANCHOR = {
     producer: 0,
     backup: 90,
@@ -4523,8 +4324,7 @@ const ANCHOR = {
     grid: 270,
 };
 const FIXED_ORDER = ['grid', 'producer', 'storage', 'backup'];
-/** Eerste ring: 8 plekken. Vier vaste plekken op de kruispunten, vier diagonalen voor de overige apparaten. */
-const RING_1_DIAGONALS = [1, 5, 3, 7]; // rechtsboven, linksonder, rechtsonder, linksboven: blijft in balans
+const RING_1_DIAGONALS = [1, 5, 3, 7];
 const RING_1_CROSS = [2, 6, 4, 0];
 function ringCount(ring) {
     return ring === 1 ? 8 : 8 * 2 ** (ring - 2);
@@ -4536,12 +4336,10 @@ function ringRadius(ring) {
     }
     return radius;
 }
-/** Ring 1 begint op 0°; buitenringen zitten precies tussen de plekken van de ring erbinnen, zodat lijnen vrij blijven. */
 function slotAngle(ring, index) {
     const count = ringCount(ring);
     return ring === 1 ? index * 45 : 180 / count + (index * 360) / count;
 }
-/** Spreidt plekken over de ring (0, half, kwart, driekwart, …) zodat een halfvolle ring toch in balans is. */
 function spread(index, count) {
     const bits = Math.log2(count);
     let result = 0;
@@ -4563,7 +4361,6 @@ function circleLayout(nodes, auto, links) {
         taken.add(key(ring, index));
         placed.set(node.id, { ring, index });
     };
-    /** De vrije plek die het dichtst bij een hoek ligt, te beginnen bij `startRing`. */
     const nearestFree = (anchor, startRing) => {
         for (let ring = startRing;; ring++) {
             let best = -1;
@@ -4586,20 +4383,17 @@ function circleLayout(nodes, auto, links) {
         const g = groupOf(n);
         members.set(g, [...(members.get(g) ?? []), n]);
     }
-    // 1. Elke groep met een vaste plek krijgt zijn eigen plek.
     for (const g of FIXED_ORDER) {
         const first = members.get(g)?.[0];
         if (first)
             take(first, 1, ANCHOR[g] / 45);
     }
-    // 2. Een tweede zonnepaneel, batterij of net komt zo dicht mogelijk bij de vaste plek.
     for (const g of FIXED_ORDER) {
         for (const extra of (members.get(g) ?? []).slice(1)) {
             const slot = nearestFree(ANCHOR[g], 1);
             take(extra, slot.ring, slot.index);
         }
     }
-    // 3. Zet eerst verbruikers die direct aan Home hangen.
     const devices = members.get('device') ?? [];
     const roots = devices.filter((device) => !consumerParentOf(device, byId, links));
     const nextDeviceSlot = () => {
@@ -4619,7 +4413,6 @@ function circleLayout(nodes, auto, links) {
         const slot = nextDeviceSlot();
         take(device, slot.ring, slot.index);
     }
-    // 4. Kinderen komen op een buitenste ring in de richting van hun parent. Meerdere niveaus worden iteratief geplaatst.
     const pending = devices.filter((device) => !placed.has(device.id));
     let guard = 0;
     while (pending.length && guard++ < devices.length + 2) {
@@ -4642,7 +4435,6 @@ function circleLayout(nodes, auto, links) {
         const slot = nextDeviceSlot();
         take(device, slot.ring, slot.index);
     }
-    // Coördinaten rond Home, en de kaart net groot genoeg (en vierkant) om alles te tonen.
     const offsets = new Map();
     let reach = RING_1 * 0.75;
     for (const [id, slot] of placed) {
@@ -4662,18 +4454,6 @@ function circleLayout(nodes, auto, links) {
         positions.set(id, { x: center + p.x, y: center + p.y });
     return { width: size, height: size, positions };
 }
-// ----- Flow ------------------------------------------------------------------------------------
-/**
- * Energiestroom-layout met Home als knooppunt:
- * - productie boven Home;
- * - net links;
- * - batterij/opslag rechts;
- * - verbruikers onder Home;
- * - backup op de onderste rij met de achterliggende apparaten een rij daaronder.
- *
- * De layout is bewust niet cirkelvormig: de lijnstructuur moet in één oogopslag laten zien
- * waar energie vandaan komt en waar die heen gaat.
- */
 function flowLayout(nodes, auto, links) {
     const byId = new Map(nodes.map((n) => [n.id, n]));
     const autoIds = new Set(auto.map((n) => n.id));
@@ -4814,20 +4594,12 @@ function flowLayout(nodes, auto, links) {
         positions.set(id, { x: point.x + dx, y: point.y + dy });
     return { width: Math.round(fittedWidth), height: Math.round(fittedHeight), positions };
 }
-// ----- Recht ----------------------------------------------------------------------------------
-const COL = 118; // afstand tussen twee nodes in een rij
+const COL = 118;
 const MARGIN_X = 62;
-const MARGIN_Y = 92; // ruimte voor de naam boven de bovenste en onder de onderste rij
-const SIDE_LABEL = 78; // ruimte voor een naam naast Home of een backup
-const MIN_ASPECT = 0.8; // breedte / hoogte
+const MARGIN_Y = 92;
+const SIDE_LABEL = 78;
+const MIN_ASPECT = 0.8;
 const MAX_ASPECT = 1.7;
-/**
- * Rechte layout, van boven naar beneden zoals bij een energiemanagementsysteem:
- *   net
- *   batterij (links) en zon (rechts), met ruimte in het midden voor de lijn naar Home
- *   Home
- *   apparaten en backup, met daaronder de apparaten die achter een backup hangen
- */
 function straightLayout(nodes, auto, links) {
     const byId = new Map(nodes.map((n) => [n.id, n]));
     const pts = new Map();
@@ -4835,15 +4607,12 @@ function straightLayout(nodes, auto, links) {
     if (home)
         pts.set(home.id, { x: 0, y: 0 });
     const row = (list, y) => list.forEach((n, i) => pts.set(n.id, { x: (i - (list.length - 1) / 2) * COL, y }));
-    // Boven Home: net, batterij en zon.
     const grids = auto.filter((n) => n.type === 'grid');
     const storages = auto.filter((n) => n.type === 'battery');
     const producers = auto.filter((n) => n.role === 'source');
     const near = [...storages, ...producers];
     if (grids.length > 0 && near.length > 0) {
         row(grids, -2 * exports.STRAIGHT_ROW_GAP);
-        // De lijn van het net loopt tussen de andere nodes door naar Home, dus het midden blijft vrij.
-        // Batterijen staan links, zon rechts; is een kant leeg, dan verdelen we de andere kant over beide zijden.
         let left = storages;
         let right = producers;
         if (storages.length === 0)
@@ -4859,8 +4628,6 @@ function straightLayout(nodes, auto, links) {
     else {
         row(near, -exports.STRAIGHT_ROW_GAP);
     }
-    // Onder Home: verbruikers vormen een boom. Een gemeten parent blijft één tak voor Home;
-    // de kinderen staan eronder als uitsplitsing en worden dus niet dubbel op de hoofdflow aangesloten.
     const consumerNodes = auto.filter((n) => n.role === 'consumer');
     const autoIds = new Set(auto.map((n) => n.id));
     const children = new Map();
@@ -4902,7 +4669,6 @@ function straightLayout(nodes, auto, links) {
         place(root, lowerCursor, widths[i], 1);
         lowerCursor += widths[i];
     });
-    // Kaart om alles heen, niet te smal en niet te breed.
     let minX = Infinity;
     let maxX = -Infinity;
     let minY = Infinity;
@@ -4911,14 +4677,12 @@ function straightLayout(nodes, auto, links) {
         const r = byId.get(id)?.role === 'home' ? exports.HOME_RADIUS : exports.NODE_RADIUS;
         minX = Math.min(minX, p.x - r);
         const node = byId.get(id);
-        // Home en backup hebben hun naam rechts naast zich staan.
         maxX = Math.max(maxX, p.x + r + (node?.role === 'home' || node?.type === 'backup' ? SIDE_LABEL : 0));
         minY = Math.min(minY, p.y - r);
         maxY = Math.max(maxY, p.y + r);
     }
     if (!Number.isFinite(minX))
         return { width: 100, height: 100, positions: new Map() };
-    // Alles staat gecentreerd rond Home; houd de kaart ook zo, zodat de naam naast Home de rest niet uit het midden duwt.
     const half = Math.max(-minX, maxX);
     minX = -half;
     maxX = half;
@@ -4942,8 +4706,8 @@ function straightLayout(nodes, auto, links) {
     return { width: Math.round(width), height: Math.round(height), positions };
 }
 
-};
-__mods["models/Connection.js"] = function(module, exports, require){
+},
+"src/models/Connection.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createConnection = createConnection;
@@ -4965,10 +4729,6 @@ function createConnection(id, from, to, options = {}) {
         invert: options.invert === true,
     };
 }
-/**
- * Zonder `connections` wordt elke node met Home verbonden:
- * verbruikers vertrekken vanuit Home, alle andere nodes stromen naar Home toe.
- */
 function defaultConnections(nodes) {
     const home = nodes.find((n) => n.role === 'home');
     if (!home)
@@ -4982,10 +4742,6 @@ function defaultConnections(nodes) {
         return createConnection(`${parent.id}__${n.id}`, parent, n);
     });
 }
-/**
- * Een gewoon apparaat kan achter een backup of een andere verbruiker hangen (`connected_to`).
- * Geeft undefined als het apparaat direct aan Home hangt.
- */
 function parentOf(node, nodes) {
     const ref = node.config.connected_to?.trim();
     if (!ref || node.role !== 'consumer' || node.type === 'backup')
@@ -4995,8 +4751,8 @@ function parentOf(node, nodes) {
     return parent && (parent.type === 'backup' || parent.role === 'consumer') ? parent : undefined;
 }
 
-};
-__mods["models/Node.js"] = function(module, exports, require){
+},
+"src/models/Node.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createNode = createNode;
@@ -5016,7 +4772,6 @@ function createNode(config, type, id) {
         groupMembers: Array.isArray(config.group_members) ? [...config.group_members] : undefined,
     };
 }
-/** Maakt uit een naam een uniek id ("Laadpaal" → "laadpaal", daarna "laadpaal_2"). */
 function generateId(name, taken) {
     const base = name
         .toLowerCase()
@@ -5031,7 +4786,6 @@ function generateId(name, taken) {
         counter++;
     return `${base}_${counter}`;
 }
-/** Welke geavanceerde opties bij welk node-type horen. */
 function advancedFieldsFor(type) {
     switch (type) {
         case 'battery':
@@ -5076,7 +4830,6 @@ function advancedFieldsFor(type) {
             return ['energy_today_entity', 'energy_total_entity'];
     }
 }
-/** De vertaalsleutel voor het label van een geavanceerd veld, rekening houdend met het apparaattype. */
 function fieldLabelKey(field, type) {
     const consumptionType = type === 'consumer' ||
         type === 'ev_charger' ||
@@ -5091,8 +4844,8 @@ function fieldLabelKey(field, type) {
     return field.replace(/_entity$/, '');
 }
 
-};
-__mods["renderer/ConnectionRenderer.js"] = function(module, exports, require){
+},
+"src/renderer/ConnectionRenderer.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.computeGeometry = computeGeometry;
@@ -5103,7 +4856,6 @@ const dom_1 = require("./dom");
 const GAP = 3;
 const PARTICLES = 3;
 const f1 = (n) => n.toFixed(1);
-/** Punten verbinden met afgeronde hoeken. Geeft ook de lengte en het midden (met de hoek daar) terug. */
 function roundedRoute(points, corner) {
     let d = `M${f1(points[0].x)} ${f1(points[0].y)}`;
     for (let i = 1; i < points.length - 1; i++) {
@@ -5138,11 +4890,6 @@ function roundedRoute(points, corner) {
     }
     return { d, length, mid, angle };
 }
-/**
- * Rechte verbinding: recht naar beneden, dan opzij, dan weer recht naar beneden, met afgeronde hoeken.
- * Verbindingen die op dezelfde plek uitkomen (bijvoorbeeld de lijn van elke bron naar Home) lopen zo over
- * één gedeelde lijn. Staan de nodes naast elkaar, dan blijft het een gewone rechte lijn.
- */
 function orthogonalGeometry(a, b, rowGap) {
     if (Math.abs(a.center.y - b.center.y) < 40)
         return null;
@@ -5170,10 +4917,6 @@ function orthogonalGeometry(a, b, rowGap) {
         angle: forward.angle,
     };
 }
-/**
- * Lijn van rand naar rand van de nodes. Verbindingen die niet via Home lopen krijgen
- * een lichte bocht, zodat ze niet dwars door het midden gaan.
- */
 function computeGeometry(a, b, curved, orthogonal = false, rowGap = AutoLayout_1.STRAIGHT_ROW_GAP) {
     if (orthogonal) {
         const route = orthogonalGeometry(a, b, rowGap);
@@ -5209,7 +4952,6 @@ function computeGeometry(a, b, curved, orthogonal = false, rowGap = AutoLayout_1
         angle: (Math.atan2(p1.y - p0.y, p1.x - p0.x) * 180) / Math.PI,
     };
 }
-/** Duur van één rondje in seconden: hoe meer vermogen, hoe sneller. Gekwantiseerd om herstarten te beperken. */
 function particleDuration(watts, ctx, connectionSpeed) {
     const load = Math.min(1, Math.log1p(Math.abs(watts)) / Math.log1p(Math.max(1, ctx.maxPower)));
     const seconds = (7 - 5 * load) / (Math.max(0.05, ctx.animationSpeed) * Math.max(0.05, connectionSpeed));
@@ -5263,7 +5005,6 @@ function createConnectionElement(conn, from, to, curved, color, orthogonal = fal
         if (key === lastKey)
             return;
         lastKey = key;
-        // Richting van de pijl (voor als er niet geanimeerd wordt)
         chevron.setAttribute('transform', `translate(${geo.mid.x.toFixed(1)} ${geo.mid.y.toFixed(1)}) rotate(${(geo.angle + (forward ? 0 : 180)).toFixed(1)})`);
         motions.forEach((m, i) => {
             m.setAttribute('path', forward ? geo.forward : geo.backward);
@@ -5275,8 +5016,8 @@ function createConnectionElement(conn, from, to, curved, color, orthogonal = fal
     return { el: g, update };
 }
 
-};
-__mods["renderer/NodeRenderer.js"] = function(module, exports, require){
+},
+"src/renderer/NodeRenderer.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.displayNameOf = displayNameOf;
@@ -5293,7 +5034,6 @@ function displayNameOf(node, language) {
         return node.name;
     return (0, i18n_1.t)(DEFAULT_NAMES[node.type] ?? node.type, language);
 }
-/** Vertaalt een reading naar tekst en status. Hier komen de statusregels samen. */
 function describeNode(node, reading, ctx) {
     const { language, powerFormat } = ctx;
     let status = reading.status;
@@ -5343,7 +5083,6 @@ function glyph(type) {
             g.append((0, dom_1.svg)('rect', { x: 6.5, y: 5, width: 11, height: 17, rx: 2.2 }), (0, dom_1.svg)('rect', { x: 10, y: 2, width: 4, height: 3, rx: 0.8 }), (0, dom_1.svg)('rect', { class: 'level', x: 8.5, y: 20, width: 7, height: 0, rx: 0.8, fill: 'currentColor', stroke: 'none' }));
             break;
         case 'backup':
-            // Generator/alternator: duidelijker als alternatieve voedingsbron dan het oude schild.
             g.append((0, dom_1.svg)('rect', { x: 4, y: 6, width: 16, height: 12, rx: 2.2 }), (0, dom_1.svg)('circle', { cx: 10, cy: 12, r: 3.1 }), (0, dom_1.svg)('path', { d: 'M13.3 12 H17 M17 9.6 V14.4 M6.5 18 V20 M17.5 18 V20' }));
             break;
         default:
@@ -5354,12 +5093,7 @@ function glyph(type) {
 function truncate(text, max) {
     return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
-function createNodeElement(node, center, radius, onOpen, 
-/**
- * Waar de naam staat: onder de node, erboven (nodes boven Home, zodat de lijn naar Home vrij blijft)
- * of ernaast (nodes waar aan twee kanten een lijn uitkomt).
- */
-labelPosition = 'below') {
+function createNodeElement(node, center, radius, onOpen, labelPosition = 'below') {
     const labelAbove = labelPosition === 'above';
     const labelSide = labelPosition === 'side';
     const hasGlyph = NodeType_1.TYPES_WITH_DEFAULT_ICON.has(node.type) && !node.icon;
@@ -5387,7 +5121,6 @@ labelPosition = 'below') {
         levelRect = iconG.querySelector('.level');
     }
     else if (node.icon) {
-        // ha-icon zorgt in Home Assistant voor alle mdi:-iconen.
         const size = 26;
         const fo = (0, dom_1.svg)('foreignObject', { x: -size / 2, y: -radius * 0.32 - size / 2 - 2, width: size, height: size });
         const icon = document.createElement('ha-icon');
@@ -5396,7 +5129,6 @@ labelPosition = 'below') {
         fo.append(icon);
         g.append(fo);
     }
-    // Tekstregels in de cirkel
     const nameIn = (0, dom_1.svg)('text', { class: 'name-in', y: -3, 'text-anchor': 'middle' });
     const socText = (0, dom_1.svg)('text', { class: 'soc', y: 4, 'text-anchor': 'middle' });
     const valueY = isBattery ? 24 : hasIcon ? radius * 0.5 + 4 : 17;
@@ -5469,8 +5201,8 @@ labelPosition = 'below') {
     return { el: g, update };
 }
 
-};
-__mods["renderer/PopupRenderer.js"] = function(module, exports, require){
+},
+"src/renderer/PopupRenderer.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Popup = void 0;
@@ -5503,11 +5235,7 @@ function nearestPoint(points, time) {
     }
     return best;
 }
-/**
- * Maakt de SVG-grafiek inspecteerbaar. Met de muis volgt de marker de cursor; op touch/click
- * blijft het gekozen tijdstip staan. Zo werkt dezelfde interactie op desktop, tablet en mobiel.
- */
-function attachInspector(root, start, end, series, format, language) {
+function attachInspector(root, start, end, series, format, language, options = {}) {
     if (series.length === 0 || series.every((item) => item.points.length === 0))
         return;
     const marker = (0, dom_1.svg)('line', {
@@ -5535,11 +5263,11 @@ function attachInspector(root, start, end, series, format, language) {
         'aria-label': (0, i18n_1.t)('inspect_graph', language),
     });
     root.append(marker, ...dots, tooltip, hit);
-    let locked = false;
+    let locked = options.selectedLocked ?? false;
     let draggingPointer;
     let lastX = PAD.l;
     const xFor = (ms) => PAD.l + ((ms - start) / Math.max(1, end - start)) * (W - PAD.l - PAD.r);
-    const updateAt = (svgX) => {
+    const updateAt = (svgX, persist = true) => {
         lastX = Math.max(PAD.l, Math.min(W - PAD.r, svgX));
         const time = start + ((lastX - PAD.l) / (W - PAD.l - PAD.r)) * (end - start);
         const chosen = series.map((item) => nearestPoint(item.points, time));
@@ -5609,6 +5337,8 @@ function attachInspector(root, start, end, series, format, language) {
         });
         tooltip.setAttribute('visibility', 'visible');
         hit.setAttribute('aria-label', `${clock(anchor.t, language)}: ${lines.slice(1).join(', ')}`);
+        if (persist)
+            options.onSelectedTimestampChange?.(anchor.t, locked);
     };
     const svgXFromPointer = (ev) => {
         const rect = root.getBoundingClientRect();
@@ -5619,6 +5349,10 @@ function attachInspector(root, start, end, series, format, language) {
         dots.forEach((dot) => dot.setAttribute('visibility', 'hidden'));
         tooltip.setAttribute('visibility', 'hidden');
     };
+    if (options.selectedTimestamp !== undefined && Number.isFinite(options.selectedTimestamp)) {
+        const restored = Math.max(start, Math.min(end, options.selectedTimestamp));
+        updateAt(xFor(restored), false);
+    }
     hit.addEventListener('pointermove', (ev) => {
         if (ev.pointerType !== 'mouse') {
             if (draggingPointer !== ev.pointerId)
@@ -5634,7 +5368,7 @@ function attachInspector(root, start, end, series, format, language) {
         try {
             hit.setPointerCapture(ev.pointerId);
         }
-        catch { /* older webviews */ }
+        catch { }
         updateAt(svgXFromPointer(ev));
     });
     const finishPointer = (ev) => {
@@ -5644,7 +5378,7 @@ function attachInspector(root, start, end, series, format, language) {
             if (hit.hasPointerCapture(ev.pointerId))
                 hit.releasePointerCapture(ev.pointerId);
         }
-        catch { /* ignore */ }
+        catch { }
         draggingPointer = undefined;
     };
     hit.addEventListener('pointerup', finishPointer);
@@ -5652,11 +5386,13 @@ function attachInspector(root, start, end, series, format, language) {
     hit.addEventListener('pointerleave', (ev) => {
         if (ev.pointerType !== 'mouse' || locked)
             return;
+        options.onSelectedTimestampChange?.(undefined, false);
         hide();
     });
     hit.addEventListener('keydown', (ev) => {
         if (ev.key === 'Escape') {
             locked = false;
+            options.onSelectedTimestampChange?.(undefined, false);
             hide();
             return;
         }
@@ -5667,8 +5403,7 @@ function attachInspector(root, start, end, series, format, language) {
         updateAt(lastX + (ev.key === 'ArrowRight' ? 8 : -8));
     });
 }
-/** Tekent de 24-uursgrafiek als kale SVG: geen externe grafiekbibliotheek nodig. */
-function buildGraph(points, start, end, format, language) {
+function buildGraph(points, start, end, format, language, inspector = {}) {
     const root = (0, dom_1.svg)('svg', { class: 'graph interactive-graph', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': (0, i18n_1.t)('last_24h', language) });
     const values = points.map((p) => p.v);
     const maxV = Math.max(0, ...values);
@@ -5686,11 +5421,10 @@ function buildGraph(points, start, end, format, language) {
     if (minV < 0) {
         root.append((0, dom_1.svg)('text', { class: 'axis', x: W - PAD.r, y: 12, 'text-anchor': 'end' }, `${(0, i18n_1.t)('minimum', language)} ${signed(minV, format)}`));
     }
-    attachInspector(root, start, end, [{ points }], format, language);
+    attachInspector(root, start, end, [{ points }], format, language, inspector);
     return root;
 }
-/** Driefaseweergave: dezelfde tijdas en schaal voor L1/L2/L3, zodat de lijnen direct vergelijkbaar zijn. */
-function buildPhaseGraph(series, format, language) {
+function buildPhaseGraph(series, format, language, inspector = {}) {
     const ready = series.filter((s) => s.history.kind === 'ready');
     if (ready.length === 0) {
         const loading = series.some((s) => s.history.kind === 'loading');
@@ -5714,7 +5448,7 @@ function buildPhaseGraph(series, format, language) {
         const line = item.history.points.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(p.t).toFixed(1)} ${y(p.v).toFixed(1)}`).join(' ');
         root.append((0, dom_1.svg)('path', { class: `phase-trace ${item.cssClass}`, d: line, fill: 'none' }));
     }
-    attachInspector(root, start, end, ready.map((item) => ({ label: item.label, points: item.history.points })), format, language);
+    attachInspector(root, start, end, ready.map((item) => ({ label: item.label, points: item.history.points })), format, language, inspector);
     const legend = (0, dom_1.html)('div', { class: 'phase-legend' });
     for (const item of series) {
         legend.append((0, dom_1.html)('span', { class: `phase-key ${item.cssClass}` }, (0, dom_1.html)('i', {}), item.label));
@@ -5726,6 +5460,7 @@ class Popup {
         this.onClose = onClose;
         this.opener = null;
         this.signature = '';
+        this.selectedGraphLocked = false;
         this.heading = (0, dom_1.html)('h2', { class: 'popup-title' });
         this.closeButton = (0, dom_1.html)('button', { class: 'popup-close', type: 'button' }, '×');
         this.body = (0, dom_1.html)('div', { class: 'popup-body' });
@@ -5750,12 +5485,16 @@ class Popup {
     open(model, opener) {
         this.opener = opener ?? null;
         this.signature = '';
+        this.selectedGraphTimestamp = undefined;
+        this.selectedGraphLocked = false;
         this.el.removeAttribute('hidden');
         this.update(model);
         this.closeButton.focus();
     }
     close() {
         this.el.setAttribute('hidden', '');
+        this.selectedGraphTimestamp = undefined;
+        this.selectedGraphLocked = false;
         this.opener?.focus();
         this.opener = null;
     }
@@ -5775,14 +5514,22 @@ class Popup {
         this.heading.textContent = model.title;
         this.closeButton.setAttribute('aria-label', (0, i18n_1.t)('close', language));
         const big = (0, dom_1.html)('div', { class: 'popup-big' }, (0, dom_1.html)('span', { class: 'popup-value' }, model.valueText), (0, dom_1.html)('span', { class: 'popup-label' }, model.subtitle ?? (0, i18n_1.t)('current_power', language)));
+        const inspector = {
+            selectedTimestamp: this.selectedGraphTimestamp,
+            selectedLocked: this.selectedGraphLocked,
+            onSelectedTimestampChange: (timestamp, locked = false) => {
+                this.selectedGraphTimestamp = timestamp;
+                this.selectedGraphLocked = timestamp !== undefined && locked;
+            },
+        };
         let graph;
         if (model.phases?.enabled) {
-            graph = buildPhaseGraph(model.phases.series, model.powerFormat, language);
+            graph = buildPhaseGraph(model.phases.series, model.powerFormat, language, inspector);
         }
         else {
             switch (model.history.kind) {
                 case 'ready':
-                    graph = buildGraph(model.history.points, model.history.start, model.history.end, model.powerFormat, language);
+                    graph = buildGraph(model.history.points, model.history.start, model.history.end, model.powerFormat, language, inspector);
                     break;
                 case 'loading':
                     graph = (0, dom_1.html)('div', { class: 'popup-empty' }, (0, i18n_1.t)('loading', language));
@@ -5850,8 +5597,8 @@ class Popup {
 }
 exports.Popup = Popup;
 
-};
-__mods["renderer/dom.js"] = function(module, exports, require){
+},
+"src/renderer/dom.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.svg = svg;
@@ -5879,7 +5626,6 @@ function html(tag, attrs = {}, ...children) {
         el.append(child);
     return el;
 }
-/** Zet tekst alleen als die echt veranderd is; voorkomt onnodig DOM-werk bij elke hass-update. */
 function setText(el, text) {
     if (el.textContent !== text)
         el.textContent = text;
@@ -5889,30 +5635,22 @@ function setAttr(el, name, value) {
         el.setAttribute(name, value);
 }
 
-};
-__mods["types/EntityStatus.js"] = function(module, exports, require){
+},
+"src/types/EntityStatus.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EntityStatus = void 0;
 exports.statusSymbol = statusSymbol;
 exports.hasValue = hasValue;
-/** Wat we weten over de waarde van één Home Assistant-entiteit. */
 var EntityStatus;
 (function (EntityStatus) {
-    /** Een geldig getal ongelijk aan nul, bijvoorbeeld 1250 W. */
     EntityStatus["Valid"] = "valid";
-    /** Een geldig getal dat precies 0 is. */
     EntityStatus["Zero"] = "zero";
-    /** Tekst die geen getal is, of een entiteit die niet bestaat. */
     EntityStatus["Invalid"] = "invalid";
-    /** Home Assistant meldt "unknown". */
     EntityStatus["Unknown"] = "unknown";
-    /** Home Assistant meldt "unavailable". */
     EntityStatus["Unavailable"] = "unavailable";
-    /** Een node die op dit moment laadt (laadindicator). */
     EntityStatus["Charging"] = "charging";
 })(EntityStatus || (exports.EntityStatus = EntityStatus = {}));
-/** Het teken dat in plaats van een waarde wordt getoond: "?" of "!"; null als er een waarde is. */
 function statusSymbol(status) {
     switch (status) {
         case EntityStatus.Invalid:
@@ -5924,13 +5662,12 @@ function statusSymbol(status) {
             return null;
     }
 }
-/** Is er een bruikbare getalwaarde (ook 0 W)? */
 function hasValue(status) {
     return status === EntityStatus.Valid || status === EntityStatus.Zero || status === EntityStatus.Charging;
 }
 
-};
-__mods["types/NodeType.js"] = function(module, exports, require){
+},
+"src/types/NodeType.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TYPES_WITH_DEFAULT_ICON = exports.NODE_TYPES = void 0;
@@ -5969,7 +5706,6 @@ const ALIASES = {
     noodstroom: 'backup',
     back_up: 'backup',
 };
-/** Leest een type uit de configuratie; accepteert ook een paar bekende aliassen ("pv", "warmtepomp"…). */
 function normalizeType(value) {
     if (typeof value !== 'string')
         return null;
@@ -5991,31 +5727,17 @@ function roleOf(type) {
             return 'consumer';
     }
 }
-/** Home, Grid, PV en Battery krijgen standaard een icoon; bij andere apparaten is het optioneel. */
 exports.TYPES_WITH_DEFAULT_ICON = new Set(['home', 'grid', 'solar', 'battery', 'backup']);
 
-};
-__mods["types/hass.js"] = function(module, exports, require){
+},
+"src/types/hass.js":(module,exports,require)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 
+},
 };
-
-const __cache = Object.create(null);
-function __norm(parts){ const out=[]; for(const p of parts){ if(!p||p==='.') continue; if(p==='..') out.pop(); else out.push(p); } return out.join('/'); }
-function __resolve(from, req){
-  if(!req.startsWith('.')) throw new Error('External module not bundled: '+req);
-  const base=from.split('/'); base.pop();
-  let id=__norm(base.concat(req.split('/')));
-  if(!id.endsWith('.js')) id += '.js';
-  return id;
-}
-function __load(id){
-  if(__cache[id]) return __cache[id].exports;
-  const fn=__mods[id]; if(!fn) throw new Error('Module not found: '+id);
-  const module={exports:{}}; __cache[id]=module;
-  fn(module,module.exports,(req)=>__load(__resolve(id,req)));
-  return module.exports;
-}
-__load('index.js');
+const __cache={};
+function __norm(p){const a=[];for(const s of p.split("/")){if(!s||s===".")continue;if(s==="..")a.pop();else a.push(s);}return a.join("/");}
+function __req(id){id=__norm(id);if(!id.endsWith(".js"))id+=".js";if(__cache[id])return __cache[id].exports;const fn=__mods[id];if(!fn)throw new Error("Module not found: "+id);const m={exports:{}};__cache[id]=m;const base=id.slice(0,id.lastIndexOf("/")+1);const local=(p)=>p.startsWith(".")?__req(__norm(base+p)):__req(p);fn(m,m.exports,local);return m.exports;}
+__req("src/index.js");
 })();

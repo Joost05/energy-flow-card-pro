@@ -75,6 +75,12 @@ interface InspectorSeries {
   points: readonly HistoryPoint[];
 }
 
+interface InspectorOptions {
+  selectedTimestamp?: number;
+  selectedLocked?: boolean;
+  onSelectedTimestampChange?(timestamp?: number, locked?: boolean): void;
+}
+
 function nearestPoint(points: readonly HistoryPoint[], time: number): HistoryPoint | undefined {
   if (points.length === 0) return undefined;
   let best = points[0]!;
@@ -101,6 +107,7 @@ function attachInspector(
   series: readonly InspectorSeries[],
   format: PowerFormat,
   language?: string,
+  options: InspectorOptions = {},
 ): void {
   if (series.length === 0 || series.every((item) => item.points.length === 0)) return;
 
@@ -130,12 +137,12 @@ function attachInspector(
   });
   root.append(marker, ...dots, tooltip, hit);
 
-  let locked = false;
+  let locked = options.selectedLocked ?? false;
   let draggingPointer: number | undefined;
   let lastX = PAD.l;
   const xFor = (ms: number) => PAD.l + ((ms - start) / Math.max(1, end - start)) * (W - PAD.l - PAD.r);
 
-  const updateAt = (svgX: number): void => {
+  const updateAt = (svgX: number, persist = true): void => {
     lastX = Math.max(PAD.l, Math.min(W - PAD.r, svgX));
     const time = start + ((lastX - PAD.l) / (W - PAD.l - PAD.r)) * (end - start);
     const chosen = series.map((item) => nearestPoint(item.points, time));
@@ -204,6 +211,7 @@ function attachInspector(
     });
     tooltip.setAttribute('visibility', 'visible');
     hit.setAttribute('aria-label', `${clock(anchor.t, language)}: ${lines.slice(1).join(', ')}`);
+    if (persist) options.onSelectedTimestampChange?.(anchor.t, locked);
   };
 
   const svgXFromPointer = (ev: PointerEvent): number => {
@@ -215,6 +223,11 @@ function attachInspector(
     dots.forEach((dot) => dot.setAttribute('visibility', 'hidden'));
     tooltip.setAttribute('visibility', 'hidden');
   };
+
+  if (options.selectedTimestamp !== undefined && Number.isFinite(options.selectedTimestamp)) {
+    const restored = Math.max(start, Math.min(end, options.selectedTimestamp));
+    updateAt(xFor(restored), false);
+  }
 
   hit.addEventListener('pointermove', (ev) => {
     if (ev.pointerType !== 'mouse') {
@@ -239,11 +252,13 @@ function attachInspector(
   hit.addEventListener('pointercancel', finishPointer);
   hit.addEventListener('pointerleave', (ev) => {
     if (ev.pointerType !== 'mouse' || locked) return;
+    options.onSelectedTimestampChange?.(undefined, false);
     hide();
   });
   hit.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape') {
       locked = false;
+      options.onSelectedTimestampChange?.(undefined, false);
       hide();
       return;
     }
@@ -261,6 +276,7 @@ export function buildGraph(
   end: number,
   format: PowerFormat,
   language?: string,
+  inspector: InspectorOptions = {},
 ): SVGSVGElement {
   const root = svg('svg', { class: 'graph interactive-graph', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': t('last_24h', language) });
 
@@ -290,7 +306,7 @@ export function buildGraph(
   if (minV < 0) {
     root.append(svg('text', { class: 'axis', x: W - PAD.r, y: 12, 'text-anchor': 'end' }, `${t('minimum', language)} ${signed(minV, format)}`));
   }
-  attachInspector(root, start, end, [{ points }], format, language);
+  attachInspector(root, start, end, [{ points }], format, language, inspector);
   return root;
 }
 
@@ -299,6 +315,7 @@ export function buildPhaseGraph(
   series: readonly PhaseGraphSeries[],
   format: PowerFormat,
   language?: string,
+  inspector: InspectorOptions = {},
 ): HTMLElement {
   const ready = series.filter((s): s is PhaseGraphSeries & { history: Extract<HistoryState, { kind: 'ready' }> } => s.history.kind === 'ready');
   if (ready.length === 0) {
@@ -329,7 +346,7 @@ export function buildPhaseGraph(
     const line = item.history.points.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(p.t).toFixed(1)} ${y(p.v).toFixed(1)}`).join(' ');
     root.append(svg('path', { class: `phase-trace ${item.cssClass}`, d: line, fill: 'none' }));
   }
-  attachInspector(root, start, end, ready.map((item) => ({ label: item.label, points: item.history.points })), format, language);
+  attachInspector(root, start, end, ready.map((item) => ({ label: item.label, points: item.history.points })), format, language, inspector);
 
   const legend = html('div', { class: 'phase-legend' });
   for (const item of series) {
@@ -346,6 +363,8 @@ export class Popup {
   private readonly closeButton: HTMLButtonElement;
   private opener: { focus(): void } | null = null;
   private signature = '';
+  private selectedGraphTimestamp?: number;
+  private selectedGraphLocked = false;
 
   constructor(private readonly onClose: () => void) {
     this.heading = html('h2', { class: 'popup-title' });
@@ -374,6 +393,8 @@ export class Popup {
   open(model: PopupModel, opener?: { focus(): void } | null): void {
     this.opener = opener ?? null;
     this.signature = '';
+    this.selectedGraphTimestamp = undefined;
+    this.selectedGraphLocked = false;
     this.el.removeAttribute('hidden');
     this.update(model);
     this.closeButton.focus();
@@ -381,6 +402,8 @@ export class Popup {
 
   close(): void {
     this.el.setAttribute('hidden', '');
+    this.selectedGraphTimestamp = undefined;
+    this.selectedGraphLocked = false;
     this.opener?.focus();
     this.opener = null;
   }
@@ -408,13 +431,22 @@ export class Popup {
       html('span', { class: 'popup-label' }, model.subtitle ?? t('current_power', language)),
     );
 
+    const inspector: InspectorOptions = {
+      selectedTimestamp: this.selectedGraphTimestamp,
+      selectedLocked: this.selectedGraphLocked,
+      onSelectedTimestampChange: (timestamp, locked = false) => {
+        this.selectedGraphTimestamp = timestamp;
+        this.selectedGraphLocked = timestamp !== undefined && locked;
+      },
+    };
+
     let graph: Node;
     if (model.phases?.enabled) {
-      graph = buildPhaseGraph(model.phases.series, model.powerFormat, language);
+      graph = buildPhaseGraph(model.phases.series, model.powerFormat, language, inspector);
     } else {
       switch (model.history.kind) {
         case 'ready':
-          graph = buildGraph(model.history.points, model.history.start, model.history.end, model.powerFormat, language);
+          graph = buildGraph(model.history.points, model.history.start, model.history.end, model.powerFormat, language, inspector);
           break;
         case 'loading':
           graph = html('div', { class: 'popup-empty' }, t('loading', language));
