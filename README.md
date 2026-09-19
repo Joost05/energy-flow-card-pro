@@ -27,18 +27,29 @@ It is designed to scale from a simple **Home / Grid / PV / Battery** overview to
 
 ## Quick look
 
-<table>
-  <tr>
-    <td align="center"><strong>Mobile overview</strong></td>
-    <td align="center"><strong>Hierarchy focus</strong></td>
-    <td align="center"><strong>Three-phase Grid popup</strong></td>
-  </tr>
-  <tr>
-    <td><img src="docs/images/overview-mobile.jpg" alt="Mobile overview" width="260"></td>
-    <td><img src="docs/images/hierarchy-mobile.jpg" alt="Hierarchy focus on mobile" width="260"></td>
-    <td><img src="docs/images/grid-popup-phases.jpg" alt="Grid popup with L1 L2 L3 graph" width="260"></td>
-  </tr>
-</table>
+### Mobile overview
+
+A compact Home-centered layout that stays readable on a phone while still showing prices, replay and warning badges.
+
+<p align="center">
+  <img src="docs/images/overview-mobile.jpg" alt="Mobile overview" width="760">
+</p>
+
+### Hierarchy focus
+
+Drill into a parent device to see the branch behind it, for example `Home -> Desk -> power strip -> PC / PS5 / 3D printer`.
+
+<p align="center">
+  <img src="docs/images/hierarchy-mobile.jpg" alt="Hierarchy focus on mobile" width="460">
+</p>
+
+### Three-phase Grid popup
+
+Inspect Grid history with optional L1 / L2 / L3 overlays, plus pricing, costs and diagnostics in the same popup.
+
+<p align="center">
+  <img src="docs/images/grid-popup-phases.jpg" alt="Grid popup with L1 L2 L3 graph" width="460">
+</p>
 
 ## Installation
 

@@ -13,17 +13,28 @@ Welcome to the Energy Flow Card Pro documentation set.
 
 ## Screenshot set used in the docs
 
-<table>
-  <tr>
-    <td align="center"><strong>Desktop hero</strong></td>
-    <td align="center"><strong>Mobile overview</strong></td>
-    <td align="center"><strong>Editor</strong></td>
-  </tr>
-  <tr>
-    <td><img src="images/hero-desktop.png" alt="Desktop hero" width="280"></td>
-    <td><img src="images/overview-mobile.jpg" alt="Mobile overview" width="180"></td>
-    <td><img src="images/editor-mobile.jpg" alt="Editor" width="180"></td>
-  </tr>
-</table>
+### Desktop hero
+
+<p align="center">
+  <img src="images/hero-desktop.png" alt="Desktop hero" width="720">
+</p>
+
+### Mobile overview
+
+<p align="center">
+  <img src="images/overview-mobile.jpg" alt="Mobile overview" width="720">
+</p>
+
+### Hierarchy focus
+
+<p align="center">
+  <img src="images/hierarchy-mobile.jpg" alt="Hierarchy focus on mobile" width="420">
+</p>
+
+### Editor
+
+<p align="center">
+  <img src="images/editor-mobile.jpg" alt="Editor" width="360">
+</p>
 
 Use the configuration guide if you want to build a card, and the troubleshooting guide if the card is already installed but not behaving as expected.
