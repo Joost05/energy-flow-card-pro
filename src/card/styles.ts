@@ -205,10 +205,13 @@ ha-card.fallback {
   background: color-mix(in srgb, var(--secondary-background-color, #f5f5f5) 48%, transparent);
 }
 .replay-controls.active { border-color: color-mix(in srgb, var(--primary-color, #03a9f4) 70%, var(--divider-color, #e0e0e0)); }
-.replay-row { display: grid; grid-template-columns: auto auto minmax(90px, 1fr) auto; align-items: center; gap: 9px; min-height: 28px; }
-.replay-label { font-size: 12px; font-weight: 600; color: var(--secondary-text-color, #727272); white-space: nowrap; }
-.replay-time { font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.replay-slider { width: 100%; min-width: 70px; height: 18px; margin: 0; accent-color: var(--primary-color, #03a9f4); }
+.replay-row { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 9px; min-height: 28px; }
+.replay-controls.active .replay-row { grid-template-columns: auto auto minmax(90px, 1fr) auto; }
+.replay-label { grid-column: 1; font-size: 12px; font-weight: 600; color: var(--secondary-text-color, #727272); white-space: nowrap; }
+.replay-time { grid-column: 2; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.replay-slider { grid-column: 2; width: 100%; min-width: 70px; height: 18px; margin: 0; accent-color: var(--primary-color, #03a9f4); }
+.replay-controls.active .replay-slider { grid-column: 3; }
+.replay-live { grid-column: 4; }
 .replay-live {
   border: 0; border-radius: 999px; padding: 5px 9px; cursor: pointer; font: inherit; font-size: 11px; font-weight: 700;
   background: var(--primary-color, #03a9f4); color: var(--text-primary-color, #fff); white-space: nowrap;
@@ -216,8 +219,12 @@ ha-card.fallback {
 .replay-live[hidden], .replay-time[hidden], .replay-status[hidden] { display: none !important; }
 .replay-status { display: block; margin-top: 2px; color: var(--secondary-text-color, #727272); font-size: 10px; line-height: 1.25; }
 @media (max-width: 520px) {
-  .replay-row { grid-template-columns: auto minmax(70px, 1fr) auto; gap: 7px; }
-  .replay-time { grid-column: 1 / -1; grid-row: 2; order: 4; font-size: 10px; }
+  .replay-row { grid-template-columns: auto minmax(0, 1fr); gap: 7px; }
+  .replay-controls.active .replay-row { grid-template-columns: auto minmax(70px, 1fr) auto; }
+  .replay-controls.active .replay-label { grid-column: 1; }
+  .replay-controls.active .replay-slider { grid-column: 2; }
+  .replay-controls.active .replay-live { grid-column: 3; }
+  .replay-time { grid-column: 1 / -1; grid-row: 2; font-size: 10px; }
   .replay-controls.active .replay-time { display: block; }
 }
 

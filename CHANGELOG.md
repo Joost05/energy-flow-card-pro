@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.15.1
+
+- Fixed the Live replay scrubber so the slider uses the full available card width instead of collapsing into a short segment.
+- Kept the compact historical replay layout: timestamp and **Live** button only appear while replay is active, with **Live** at the far right of the slider.
+- Replaced unrestricted browser color pickers with a curated palette of 17 readable preset colors plus each category's default color.
+- Preserved existing custom CSS colors from 0.15.0/YAML for backwards compatibility; the editor shows them as an existing custom color until a preset or Default is selected.
+- Updated editor help text and runtime/package version to **0.15.1**.
+
 ## 0.15.0
 
 - Added configurable colors for Solar, Grid, Battery, Home, Consumers, EV chargers, Backup, Generator and Producer nodes.

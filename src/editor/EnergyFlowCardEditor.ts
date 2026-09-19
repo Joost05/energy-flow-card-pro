@@ -55,7 +55,9 @@ input[type="text"], input[type="number"], select {
 }
 .color-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 8px; }
 .color-field { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 9px; border: 1px solid var(--divider-color, #ddd); border-radius: 8px; font-size: 12px; }
-.color-field input[type="color"] { width: 34px; height: 26px; border: 0; padding: 0; background: transparent; cursor: pointer; }
+.color-choice { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.color-swatch { width: 18px; height: 18px; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--primary-text-color) 25%, transparent); flex: 0 0 auto; }
+.color-field select { width: auto; min-width: 112px; padding: 6px 28px 6px 8px; font-size: 12px; }
 .color-actions { display: flex; justify-content: flex-end; margin-top: 8px; }
 ha-entity-picker { width: 100%; }
 input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--primary-color, #03a9f4); outline-offset: 1px; }
@@ -767,16 +769,59 @@ export class EnergyFlowCardEditor extends HTMLElement {
       ['solar', 'color_solar'], ['grid', 'color_grid'], ['battery', 'color_battery'], ['home', 'color_home'],
       ['consumer', 'color_consumer'], ['ev', 'color_ev'], ['backup', 'color_backup'], ['generator', 'color_generator'], ['producer', 'color_producer'],
     ];
+    const isNl = lang === 'nl';
+    const presets = [
+      ['#ef5350', isNl ? 'Rood' : 'Red'],
+      ['#ec407a', isNl ? 'Roze' : 'Pink'],
+      ['#ab47bc', isNl ? 'Paars' : 'Purple'],
+      ['#7e57c2', isNl ? 'Violet' : 'Violet'],
+      ['#5c6bc0', isNl ? 'Indigo' : 'Indigo'],
+      ['#42a5f5', isNl ? 'Blauw' : 'Blue'],
+      ['#29b6f6', isNl ? 'Lichtblauw' : 'Light blue'],
+      ['#26c6da', isNl ? 'Cyaan' : 'Cyan'],
+      ['#26a69a', isNl ? 'Turkoois' : 'Teal'],
+      ['#66bb6a', isNl ? 'Groen' : 'Green'],
+      ['#9ccc65', isNl ? 'Lichtgroen' : 'Light green'],
+      ['#d4e157', isNl ? 'Limoen' : 'Lime'],
+      ['#ffca28', isNl ? 'Geel' : 'Yellow'],
+      ['#ffa726', isNl ? 'Oranje' : 'Orange'],
+      ['#8d6e63', isNl ? 'Bruin' : 'Brown'],
+      ['#78909c', isNl ? 'Blauwgrijs' : 'Blue grey'],
+      ['#9e9e9e', isNl ? 'Grijs' : 'Grey'],
+    ] as const;
     const grid = html('div', { class: 'color-grid' });
     for (const [key, labelKey] of labels) {
-      const input = html('input', { type: 'color', value: this.config.colors?.[key] ?? defaults[key], 'aria-label': t(labelKey, lang) }) as HTMLInputElement;
-      input.addEventListener('input', () => {
-        if (!this.config.colors) this.config.colors = {};
-        this.config.colors[key] = input.value;
+      const current = this.config.colors?.[key];
+      const selected = !current || current.toLowerCase() === defaults[key].toLowerCase() ? '__default__' : current;
+      const select = html('select', { 'aria-label': t(labelKey, lang) }) as HTMLSelectElement;
+      select.append(html('option', { value: '__default__' }, isNl ? 'Standaard' : 'Default'));
+      for (const [value, name] of presets) select.append(html('option', { value }, name));
+      if (current && current !== defaults[key] && !presets.some(([value]) => value.toLowerCase() === current.toLowerCase())) {
+        select.append(html('option', { value: current }, isNl ? 'Bestaande aangepaste kleur' : 'Existing custom color'));
+      }
+      select.value = selected;
+      const swatch = html('span', { class: 'color-swatch', style: `background:${current ?? defaults[key]}` });
+      const updateSwatch = () => {
+        const value = select.value === '__default__' ? defaults[key] : select.value;
+        swatch.setAttribute('style', `background:${value}`);
+      };
+      select.addEventListener('change', () => {
+        if (select.value === '__default__') {
+          if (this.config.colors) {
+            delete this.config.colors[key];
+            if (Object.keys(this.config.colors).length === 0) delete this.config.colors;
+          }
+        } else {
+          if (!this.config.colors) this.config.colors = {};
+          this.config.colors[key] = select.value;
+        }
+        updateSwatch();
         this.commit();
-        this.render();
       });
-      grid.append(html('label', { class: 'color-field' }, html('span', {}, t(labelKey, lang)), input));
+      grid.append(html('label', { class: 'color-field' },
+        html('span', {}, t(labelKey, lang)),
+        html('span', { class: 'color-choice' }, swatch, select),
+      ));
     }
     const reset = html('button', { class: 'btn', type: 'button' }, t('colors_reset', lang));
     reset.addEventListener('click', () => { delete this.config.colors; this.commit(); this.render(); });

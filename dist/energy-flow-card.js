@@ -1255,10 +1255,13 @@ ha-card.fallback {
   background: color-mix(in srgb, var(--secondary-background-color, #f5f5f5) 48%, transparent);
 }
 .replay-controls.active { border-color: color-mix(in srgb, var(--primary-color, #03a9f4) 70%, var(--divider-color, #e0e0e0)); }
-.replay-row { display: grid; grid-template-columns: auto auto minmax(90px, 1fr) auto; align-items: center; gap: 9px; min-height: 28px; }
-.replay-label { font-size: 12px; font-weight: 600; color: var(--secondary-text-color, #727272); white-space: nowrap; }
-.replay-time { font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.replay-slider { width: 100%; min-width: 70px; height: 18px; margin: 0; accent-color: var(--primary-color, #03a9f4); }
+.replay-row { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 9px; min-height: 28px; }
+.replay-controls.active .replay-row { grid-template-columns: auto auto minmax(90px, 1fr) auto; }
+.replay-label { grid-column: 1; font-size: 12px; font-weight: 600; color: var(--secondary-text-color, #727272); white-space: nowrap; }
+.replay-time { grid-column: 2; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.replay-slider { grid-column: 2; width: 100%; min-width: 70px; height: 18px; margin: 0; accent-color: var(--primary-color, #03a9f4); }
+.replay-controls.active .replay-slider { grid-column: 3; }
+.replay-live { grid-column: 4; }
 .replay-live {
   border: 0; border-radius: 999px; padding: 5px 9px; cursor: pointer; font: inherit; font-size: 11px; font-weight: 700;
   background: var(--primary-color, #03a9f4); color: var(--text-primary-color, #fff); white-space: nowrap;
@@ -1266,8 +1269,12 @@ ha-card.fallback {
 .replay-live[hidden], .replay-time[hidden], .replay-status[hidden] { display: none !important; }
 .replay-status { display: block; margin-top: 2px; color: var(--secondary-text-color, #727272); font-size: 10px; line-height: 1.25; }
 @media (max-width: 520px) {
-  .replay-row { grid-template-columns: auto minmax(70px, 1fr) auto; gap: 7px; }
-  .replay-time { grid-column: 1 / -1; grid-row: 2; order: 4; font-size: 10px; }
+  .replay-row { grid-template-columns: auto minmax(0, 1fr); gap: 7px; }
+  .replay-controls.active .replay-row { grid-template-columns: auto minmax(70px, 1fr) auto; }
+  .replay-controls.active .replay-label { grid-column: 1; }
+  .replay-controls.active .replay-slider { grid-column: 2; }
+  .replay-controls.active .replay-live { grid-column: 3; }
+  .replay-time { grid-column: 1 / -1; grid-row: 2; font-size: 10px; }
   .replay-controls.active .replay-time { display: block; }
 }
 
@@ -1810,7 +1817,9 @@ input[type="text"], input[type="number"], select {
 }
 .color-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 8px; }
 .color-field { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 9px; border: 1px solid var(--divider-color, #ddd); border-radius: 8px; font-size: 12px; }
-.color-field input[type="color"] { width: 34px; height: 26px; border: 0; padding: 0; background: transparent; cursor: pointer; }
+.color-choice { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.color-swatch { width: 18px; height: 18px; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--primary-text-color) 25%, transparent); flex: 0 0 auto; }
+.color-field select { width: auto; min-width: 112px; padding: 6px 28px 6px 8px; font-size: 12px; }
 .color-actions { display: flex; justify-content: flex-end; margin-top: 8px; }
 ha-entity-picker { width: 100%; }
 input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--primary-color, #03a9f4); outline-offset: 1px; }
@@ -2466,17 +2475,60 @@ class EnergyFlowCardEditor extends HTMLElement {
             ['solar', 'color_solar'], ['grid', 'color_grid'], ['battery', 'color_battery'], ['home', 'color_home'],
             ['consumer', 'color_consumer'], ['ev', 'color_ev'], ['backup', 'color_backup'], ['generator', 'color_generator'], ['producer', 'color_producer'],
         ];
+        const isNl = lang === 'nl';
+        const presets = [
+            ['#ef5350', isNl ? 'Rood' : 'Red'],
+            ['#ec407a', isNl ? 'Roze' : 'Pink'],
+            ['#ab47bc', isNl ? 'Paars' : 'Purple'],
+            ['#7e57c2', isNl ? 'Violet' : 'Violet'],
+            ['#5c6bc0', isNl ? 'Indigo' : 'Indigo'],
+            ['#42a5f5', isNl ? 'Blauw' : 'Blue'],
+            ['#29b6f6', isNl ? 'Lichtblauw' : 'Light blue'],
+            ['#26c6da', isNl ? 'Cyaan' : 'Cyan'],
+            ['#26a69a', isNl ? 'Turkoois' : 'Teal'],
+            ['#66bb6a', isNl ? 'Groen' : 'Green'],
+            ['#9ccc65', isNl ? 'Lichtgroen' : 'Light green'],
+            ['#d4e157', isNl ? 'Limoen' : 'Lime'],
+            ['#ffca28', isNl ? 'Geel' : 'Yellow'],
+            ['#ffa726', isNl ? 'Oranje' : 'Orange'],
+            ['#8d6e63', isNl ? 'Bruin' : 'Brown'],
+            ['#78909c', isNl ? 'Blauwgrijs' : 'Blue grey'],
+            ['#9e9e9e', isNl ? 'Grijs' : 'Grey'],
+        ];
         const grid = (0, dom_1.html)('div', { class: 'color-grid' });
         for (const [key, labelKey] of labels) {
-            const input = (0, dom_1.html)('input', { type: 'color', value: this.config.colors?.[key] ?? defaults[key], 'aria-label': (0, i18n_1.t)(labelKey, lang) });
-            input.addEventListener('input', () => {
-                if (!this.config.colors)
-                    this.config.colors = {};
-                this.config.colors[key] = input.value;
+            const current = this.config.colors?.[key];
+            const selected = !current || current.toLowerCase() === defaults[key].toLowerCase() ? '__default__' : current;
+            const select = (0, dom_1.html)('select', { 'aria-label': (0, i18n_1.t)(labelKey, lang) });
+            select.append((0, dom_1.html)('option', { value: '__default__' }, isNl ? 'Standaard' : 'Default'));
+            for (const [value, name] of presets)
+                select.append((0, dom_1.html)('option', { value }, name));
+            if (current && current !== defaults[key] && !presets.some(([value]) => value.toLowerCase() === current.toLowerCase())) {
+                select.append((0, dom_1.html)('option', { value: current }, isNl ? 'Bestaande aangepaste kleur' : 'Existing custom color'));
+            }
+            select.value = selected;
+            const swatch = (0, dom_1.html)('span', { class: 'color-swatch', style: `background:${current ?? defaults[key]}` });
+            const updateSwatch = () => {
+                const value = select.value === '__default__' ? defaults[key] : select.value;
+                swatch.setAttribute('style', `background:${value}`);
+            };
+            select.addEventListener('change', () => {
+                if (select.value === '__default__') {
+                    if (this.config.colors) {
+                        delete this.config.colors[key];
+                        if (Object.keys(this.config.colors).length === 0)
+                            delete this.config.colors;
+                    }
+                }
+                else {
+                    if (!this.config.colors)
+                        this.config.colors = {};
+                    this.config.colors[key] = select.value;
+                }
+                updateSwatch();
                 this.commit();
-                this.render();
             });
-            grid.append((0, dom_1.html)('label', { class: 'color-field' }, (0, dom_1.html)('span', {}, (0, i18n_1.t)(labelKey, lang)), input));
+            grid.append((0, dom_1.html)('label', { class: 'color-field' }, (0, dom_1.html)('span', {}, (0, i18n_1.t)(labelKey, lang)), (0, dom_1.html)('span', { class: 'color-choice' }, swatch, select)));
         }
         const reset = (0, dom_1.html)('button', { class: 'btn', type: 'button' }, (0, i18n_1.t)('colors_reset', lang));
         reset.addEventListener('click', () => { delete this.config.colors; this.commit(); this.render(); });
@@ -3374,7 +3426,7 @@ const nl = {
     ed_layout_circle: "Rond: vaste plekken rond de woning",
     ed_layout_straight: "Recht: van boven naar beneden",
     ed_colors: "Kleuren",
-    ed_colors_hint: "Pas de kleuren per energietype aan. Laat de standaardkleuren staan als je niets wilt wijzigen.",
+    ed_colors_hint: "Kies per energietype uit een vaste set goed leesbare kleuren. Laat Standaard staan als je niets wilt wijzigen.",
     colors_reset: "Standaardkleuren herstellen",
     color_solar: "Zonnepanelen",
     color_grid: "Net",
@@ -3570,7 +3622,7 @@ const en = {
     ed_layout_circle: "Round: fixed spots around the home",
     ed_layout_straight: "Straight: top to bottom",
     ed_colors: "Colors",
-    ed_colors_hint: "Customize the colors for each energy type. Keep the defaults if you do not need custom colors.",
+    ed_colors_hint: "Choose from a fixed set of readable colors for each energy type. Keep Default if you do not need an override.",
     colors_reset: "Restore default colors",
     color_solar: "Solar",
     color_grid: "Grid",
@@ -4002,7 +4054,7 @@ if (!window.customCards.some((c) => c.type === 'energy-flow-card')) {
         preview: true,
     });
 }
-console.info('%c ENERGY-FLOW-CARD-PRO %c 0.15.0 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
+console.info('%c ENERGY-FLOW-CARD-PRO %c 0.15.1 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
 
 },
 "src/layout/AutoLayout.js":(module,exports,require)=>{
