@@ -8,6 +8,34 @@ import { NODE_TYPES, normalizeType } from '../types/NodeType';
 import type { NodeType } from '../types/NodeType';
 
 
+
+export type PricingMode = 'none' | 'fixed' | 'entities' | 'dynamic';
+export type DynamicProvider = 'frank' | 'zonneplan' | 'tibber' | 'anwb' | 'nextenergy' | 'nordpool' | 'other';
+
+export interface PricingConfig {
+  mode?: PricingMode;
+  /** Currency used for display. EUR is the default. */
+  currency?: string;
+  /** Fixed all-in prices in currency/kWh. */
+  import_price?: number;
+  export_price?: number;
+  /** HA entities whose current state is a price per kWh. */
+  import_price_entity?: string;
+  export_price_entity?: string;
+  /** Optional preset label for a dynamic contract. No supplier API is called directly. */
+  provider?: DynamicProvider;
+}
+
+export interface ResolvedPricingConfig {
+  mode: PricingMode;
+  currency: string;
+  importPrice?: number;
+  exportPrice?: number;
+  importPriceEntity?: string;
+  exportPriceEntity?: string;
+  provider?: DynamicProvider;
+}
+
 export interface DeviceGroupConfig {
   id?: string;
   name: string;
@@ -44,6 +72,8 @@ export interface CardConfig {
   groups?: DeviceGroupConfig[];
   connections?: ConnectionConfig[];
   layout?: { mode?: 'flow' | 'circle' | 'straight' | 'auto' | 'eniris'; positions?: Record<string, Point> };
+  /** Optional energy price configuration. */
+  pricing?: PricingConfig;
 }
 
 /** Layout blijft los van Node en Connection: "waar staat het?" Posities zijn percentages (0-100). */
@@ -65,6 +95,7 @@ export interface ResolvedConfig {
   groups: ResolvedDeviceGroup[];
   connections: Connection[];
   layout: LayoutConfig;
+  pricing: ResolvedPricingConfig;
 }
 
 export class ConfigError extends Error {
@@ -118,6 +149,7 @@ export function normalizeConfig(raw: unknown): ResolvedConfig {
   const connections = parseConnections(raw.connections, nodes);
   const groups = parseGroups(raw.groups, nodes, connections);
   const layout = parseLayout(raw.layout);
+  const pricing = parsePricing(raw.pricing ?? (demo ? { mode: 'fixed', import_price: 0.31, export_price: 0.09 } : undefined));
 
   const powerFormat = (raw.power_format ?? 'w') as PowerFormat;
   if (powerFormat !== 'w' && powerFormat !== 'kw' && powerFormat !== 'auto') {
@@ -135,6 +167,41 @@ export function normalizeConfig(raw: unknown): ResolvedConfig {
     groups,
     connections,
     layout,
+    pricing,
+  };
+}
+
+
+function optionalPrice(value: unknown, key: string): number | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    throw new ConfigError(`"${key}" moet een getal van 0 of hoger zijn.`);
+  }
+  return value;
+}
+
+function parsePricing(raw: unknown): ResolvedPricingConfig {
+  if (raw === undefined || raw === null) return { mode: 'none', currency: 'EUR' };
+  if (!isRecord(raw)) throw new ConfigError('"pricing" moet een object zijn.');
+  const mode = (raw.mode ?? 'none') as PricingMode;
+  if (!['none', 'fixed', 'entities', 'dynamic'].includes(mode)) {
+    throw new ConfigError('"pricing.mode" moet "none", "fixed", "entities" of "dynamic" zijn.');
+  }
+  const currency = typeof raw.currency === 'string' && raw.currency.trim() ? raw.currency.trim().toUpperCase() : 'EUR';
+  const provider = typeof raw.provider === 'string' ? raw.provider as DynamicProvider : undefined;
+  if (provider && !['frank','zonneplan','tibber','anwb','nextenergy','nordpool','other'].includes(provider)) {
+    throw new ConfigError('"pricing.provider" is onbekend.');
+  }
+  const importPriceEntity = typeof raw.import_price_entity === 'string' && raw.import_price_entity.trim() ? raw.import_price_entity.trim() : undefined;
+  const exportPriceEntity = typeof raw.export_price_entity === 'string' && raw.export_price_entity.trim() ? raw.export_price_entity.trim() : undefined;
+  return {
+    mode,
+    currency,
+    importPrice: optionalPrice(raw.import_price, 'pricing.import_price'),
+    exportPrice: optionalPrice(raw.export_price, 'pricing.export_price'),
+    importPriceEntity,
+    exportPriceEntity,
+    provider,
   };
 }
 

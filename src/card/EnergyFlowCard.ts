@@ -9,6 +9,7 @@ import {
 } from '../helpers/flowHelper';
 import { HistoryPoint, bucketize, fetchHistoryBatch } from '../helpers/historyHelper';
 import { hassLanguage, t } from '../helpers/i18n';
+import { currentGridRate, formatCurrency, formatPrice, readPrices } from '../helpers/pricingHelper';
 import { applyGroupReadings, buildDisplayGraph } from '../helpers/groupHelper';
 import { formatPower, parsePower } from '../helpers/stateHelper';
 import { HOME_RADIUS, NODE_RADIUS, computeLayout } from '../layout/AutoLayout';
@@ -153,11 +154,24 @@ export class EnergyFlowCard extends HTMLElement {
       );
     } else {
       if (cfg.demo) stage.append(html('div', { class: 'badge' }, t('demo_badge', this.language)));
+      if (cfg.pricing.mode !== 'none') stage.append(this.buildPriceBadge(cfg));
       stage.append(this.buildFlowSvg(cfg));
     }
 
     card.append(this.popup.el);
     root.replaceChildren(html('style', {}, styles), card);
+  }
+
+  private buildPriceBadge(cfg: ResolvedConfig): HTMLElement {
+    const prices = readPrices(cfg.pricing, cfg.demo ? undefined : this._hass);
+    const currency = cfg.pricing.currency;
+    const importText = prices.importPrice === null ? '?' : formatPrice(prices.importPrice, currency, this.language);
+    const exportText = prices.exportPrice === null ? '?' : formatPrice(prices.exportPrice, currency, this.language);
+    const el = html('div', { class: 'price-badge' },
+      html('span', { 'data-price-import': '' }, `↓ ${importText}`),
+      html('span', { 'data-price-export': '' }, `↑ ${exportText}`),
+    );
+    return el;
   }
 
   private buildFlowSvg(cfg: ResolvedConfig): SVGSVGElement {
@@ -243,6 +257,18 @@ export class EnergyFlowCard extends HTMLElement {
     return { readings, flows };
   }
 
+  private updatePriceBadge(): void {
+    const cfg = this.config;
+    if (!cfg || cfg.pricing.mode === 'none') return;
+    const prices = readPrices(cfg.pricing, cfg.demo ? undefined : this._hass);
+    const importEl = this.shadowRoot?.querySelector('[data-price-import]');
+    const exportEl = this.shadowRoot?.querySelector('[data-price-export]');
+    const importText = prices.importPrice === null ? '?' : formatPrice(prices.importPrice, cfg.pricing.currency, this.language);
+    const exportText = prices.exportPrice === null ? '?' : formatPrice(prices.exportPrice, cfg.pricing.currency, this.language);
+    if (importEl) importEl.textContent = `↓ ${importText}`;
+    if (exportEl) exportEl.textContent = `↑ ${exportText}`;
+  }
+
   private flowContext(): FlowContext {
     const cfg = this.config!;
     return {
@@ -258,6 +284,7 @@ export class EnergyFlowCard extends HTMLElement {
     if (cfg.demo && document.hidden) return;
 
     this.computed = this.compute();
+    this.updatePriceBadge();
     const ctx = { powerFormat: cfg.powerFormat, language: this.language };
 
     for (const node of (this.displayNodes.length ? this.displayNodes : cfg.nodes)) {
@@ -346,6 +373,19 @@ export class EnergyFlowCard extends HTMLElement {
         const friendly = this._hass?.states[extra.entity]?.attributes.friendly_name;
         const label = extra.name ?? (typeof friendly === 'string' ? friendly : extra.entity);
         rows.push({ label, value: this.formatEntity(extra.entity) });
+      }
+    }
+
+    if (node.type === 'grid' && cfg.pricing.mode !== 'none') {
+      const prices = readPrices(cfg.pricing, cfg.demo ? undefined : this._hass);
+      if (prices.importPrice !== null) rows.push({ label: t('current_import_price', lang), value: formatPrice(prices.importPrice, cfg.pricing.currency, lang) });
+      if (prices.exportPrice !== null) rows.push({ label: t('current_export_price', lang), value: formatPrice(prices.exportPrice, cfg.pricing.currency, lang) });
+      const rate = currentGridRate(reading.watts, prices);
+      if (rate.value !== null && rate.kind !== 'none') {
+        rows.push({
+          label: t(rate.kind === 'cost' ? 'current_cost_rate' : 'current_revenue_rate', lang),
+          value: `${formatCurrency(rate.value, cfg.pricing.currency, lang, 3)} ${t('per_hour', lang)}`,
+        });
       }
     }
 

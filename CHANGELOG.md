@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.9.0
+
+- Added optional energy pricing with separate import and export tariffs.
+- Added three pricing modes: fixed tariffs, Home Assistant price entities and dynamic-contract presets.
+- Added provider/source presets for Frank Energie, Zonneplan, Tibber, ANWB Energy, NextEnergy, Nord Pool and Other.
+- Kept supplier access local to Home Assistant: presets never call supplier APIs directly.
+- Added current import/export prices to the card when pricing is enabled.
+- Added current grid cost or export revenue per hour to the Grid detail popup.
+- Added price-unit normalization for common currency/kWh and cents/kWh sensors.
+- Updated Demo mode with example fixed tariffs (EUR 0.31/kWh import and EUR 0.09/kWh export).
+- Added pricing configuration and calculation tests.
+- Updated the runtime version to **0.9.0**.
+
 ## 0.8.3
 
 - Standardized the public README and changelog to English for a consistent HACS/GitHub project experience.

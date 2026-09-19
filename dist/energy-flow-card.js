@@ -1,7 +1,6 @@
-// Energy Flow Card v0.8.2
-(() => {
-const __modules = Object.create(null);
-__modules["src/card/EnergyFlowCard.ts"] = function(require, module, exports) {
+(()=>{
+const __mods={
+"src/card/EnergyFlowCard.js":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ConfigError = exports.EnergyFlowCard = void 0;
@@ -11,6 +10,7 @@ const DemoEngine_1 = require("../demo/DemoEngine");
 const flowHelper_1 = require("../helpers/flowHelper");
 const historyHelper_1 = require("../helpers/historyHelper");
 const i18n_1 = require("../helpers/i18n");
+const pricingHelper_1 = require("../helpers/pricingHelper");
 const groupHelper_1 = require("../helpers/groupHelper");
 const stateHelper_1 = require("../helpers/stateHelper");
 const AutoLayout_1 = require("../layout/AutoLayout");
@@ -122,10 +122,20 @@ class EnergyFlowCard extends HTMLElement {
         else {
             if (cfg.demo)
                 stage.append((0, dom_1.html)('div', { class: 'badge' }, (0, i18n_1.t)('demo_badge', this.language)));
+            if (cfg.pricing.mode !== 'none')
+                stage.append(this.buildPriceBadge(cfg));
             stage.append(this.buildFlowSvg(cfg));
         }
         card.append(this.popup.el);
         root.replaceChildren((0, dom_1.html)('style', {}, styles_1.styles), card);
+    }
+    buildPriceBadge(cfg) {
+        const prices = (0, pricingHelper_1.readPrices)(cfg.pricing, cfg.demo ? undefined : this._hass);
+        const currency = cfg.pricing.currency;
+        const importText = prices.importPrice === null ? '?' : (0, pricingHelper_1.formatPrice)(prices.importPrice, currency, this.language);
+        const exportText = prices.exportPrice === null ? '?' : (0, pricingHelper_1.formatPrice)(prices.exportPrice, currency, this.language);
+        const el = (0, dom_1.html)('div', { class: 'price-badge' }, (0, dom_1.html)('span', { 'data-price-import': '' }, `↓ ${importText}`), (0, dom_1.html)('span', { 'data-price-export': '' }, `↑ ${exportText}`));
+        return el;
     }
     buildFlowSvg(cfg) {
         const nodes = this.displayNodes.length ? this.displayNodes : cfg.nodes;
@@ -200,6 +210,20 @@ class EnergyFlowCard extends HTMLElement {
         flows = (0, flowHelper_1.computeFlows)(displayNodes, displayConnections, readings, cfg.demo ? undefined : this._hass, { ignoreEntities: cfg.demo });
         return { readings, flows };
     }
+    updatePriceBadge() {
+        const cfg = this.config;
+        if (!cfg || cfg.pricing.mode === 'none')
+            return;
+        const prices = (0, pricingHelper_1.readPrices)(cfg.pricing, cfg.demo ? undefined : this._hass);
+        const importEl = this.shadowRoot?.querySelector('[data-price-import]');
+        const exportEl = this.shadowRoot?.querySelector('[data-price-export]');
+        const importText = prices.importPrice === null ? '?' : (0, pricingHelper_1.formatPrice)(prices.importPrice, cfg.pricing.currency, this.language);
+        const exportText = prices.exportPrice === null ? '?' : (0, pricingHelper_1.formatPrice)(prices.exportPrice, cfg.pricing.currency, this.language);
+        if (importEl)
+            importEl.textContent = `↓ ${importText}`;
+        if (exportEl)
+            exportEl.textContent = `↑ ${exportText}`;
+    }
     flowContext() {
         const cfg = this.config;
         return {
@@ -215,6 +239,7 @@ class EnergyFlowCard extends HTMLElement {
         if (cfg.demo && document.hidden)
             return;
         this.computed = this.compute();
+        this.updatePriceBadge();
         const ctx = { powerFormat: cfg.powerFormat, language: this.language };
         for (const node of (this.displayNodes.length ? this.displayNodes : cfg.nodes)) {
             const reading = this.computed.readings.get(node.id);
@@ -304,6 +329,20 @@ class EnergyFlowCard extends HTMLElement {
                 const friendly = this._hass?.states[extra.entity]?.attributes.friendly_name;
                 const label = extra.name ?? (typeof friendly === 'string' ? friendly : extra.entity);
                 rows.push({ label, value: this.formatEntity(extra.entity) });
+            }
+        }
+        if (node.type === 'grid' && cfg.pricing.mode !== 'none') {
+            const prices = (0, pricingHelper_1.readPrices)(cfg.pricing, cfg.demo ? undefined : this._hass);
+            if (prices.importPrice !== null)
+                rows.push({ label: (0, i18n_1.t)('current_import_price', lang), value: (0, pricingHelper_1.formatPrice)(prices.importPrice, cfg.pricing.currency, lang) });
+            if (prices.exportPrice !== null)
+                rows.push({ label: (0, i18n_1.t)('current_export_price', lang), value: (0, pricingHelper_1.formatPrice)(prices.exportPrice, cfg.pricing.currency, lang) });
+            const rate = (0, pricingHelper_1.currentGridRate)(reading.watts, prices);
+            if (rate.value !== null && rate.kind !== 'none') {
+                rows.push({
+                    label: (0, i18n_1.t)(rate.kind === 'cost' ? 'current_cost_rate' : 'current_revenue_rate', lang),
+                    value: `${(0, pricingHelper_1.formatCurrency)(rate.value, cfg.pricing.currency, lang, 3)} ${(0, i18n_1.t)('per_hour', lang)}`,
+                });
             }
         }
         const powerEntity = node.config.power_entity ?? node.config.production_entity;
@@ -599,8 +638,8 @@ function labelPositionFor(node, y, homeY, straight) {
     return y < homeY - 1 ? 'above' : 'below';
 }
 
-};
-__modules["src/card/styles.ts"] = function(require, module, exports) {
+},
+"src/card/styles.js":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.styles = void 0;
@@ -634,6 +673,15 @@ ha-card.fallback {
   padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 500;
   color: var(--secondary-text-color, #727272);
   border: 1px solid var(--divider-color, #e0e0e0);
+}
+
+.price-badge {
+  position: absolute; top: 10px; right: 12px; z-index: 1;
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end;
+  padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 500;
+  color: var(--secondary-text-color, #727272);
+  border: 1px solid var(--divider-color, #e0e0e0);
+  background: color-mix(in srgb, var(--card-background-color, #fff) 84%, transparent);
 }
 
 .empty { padding: 32px 24px; text-align: center; }
@@ -755,8 +803,8 @@ ha-card.fallback {
 }
 `;
 
-};
-__modules["src/config/CardConfig.ts"] = function(require, module, exports) {
+},
+"src/config/CardConfig.js":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ConfigError = void 0;
@@ -814,6 +862,7 @@ function normalizeConfig(raw) {
     const connections = parseConnections(raw.connections, nodes);
     const groups = parseGroups(raw.groups, nodes, connections);
     const layout = parseLayout(raw.layout);
+    const pricing = parsePricing(raw.pricing ?? (demo ? { mode: 'fixed', import_price: 0.31, export_price: 0.09 } : undefined));
     const powerFormat = (raw.power_format ?? 'w');
     if (powerFormat !== 'w' && powerFormat !== 'kw' && powerFormat !== 'auto') {
         throw new ConfigError('"power_format" moet "w", "kw" of "auto" zijn.');
@@ -829,6 +878,41 @@ function normalizeConfig(raw) {
         groups,
         connections,
         layout,
+        pricing,
+    };
+}
+function optionalPrice(value, key) {
+    if (value === undefined || value === null || value === '')
+        return undefined;
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+        throw new ConfigError(`"${key}" moet een getal van 0 of hoger zijn.`);
+    }
+    return value;
+}
+function parsePricing(raw) {
+    if (raw === undefined || raw === null)
+        return { mode: 'none', currency: 'EUR' };
+    if (!isRecord(raw))
+        throw new ConfigError('"pricing" moet een object zijn.');
+    const mode = (raw.mode ?? 'none');
+    if (!['none', 'fixed', 'entities', 'dynamic'].includes(mode)) {
+        throw new ConfigError('"pricing.mode" moet "none", "fixed", "entities" of "dynamic" zijn.');
+    }
+    const currency = typeof raw.currency === 'string' && raw.currency.trim() ? raw.currency.trim().toUpperCase() : 'EUR';
+    const provider = typeof raw.provider === 'string' ? raw.provider : undefined;
+    if (provider && !['frank', 'zonneplan', 'tibber', 'anwb', 'nextenergy', 'nordpool', 'other'].includes(provider)) {
+        throw new ConfigError('"pricing.provider" is onbekend.');
+    }
+    const importPriceEntity = typeof raw.import_price_entity === 'string' && raw.import_price_entity.trim() ? raw.import_price_entity.trim() : undefined;
+    const exportPriceEntity = typeof raw.export_price_entity === 'string' && raw.export_price_entity.trim() ? raw.export_price_entity.trim() : undefined;
+    return {
+        mode,
+        currency,
+        importPrice: optionalPrice(raw.import_price, 'pricing.import_price'),
+        exportPrice: optionalPrice(raw.export_price, 'pricing.export_price'),
+        importPriceEntity,
+        exportPriceEntity,
+        provider,
     };
 }
 function parseNodes(raw) {
@@ -1016,8 +1100,8 @@ function parseLayout(raw) {
     return { mode, positions };
 }
 
-};
-__modules["src/demo/DemoEngine.ts"] = function(require, module, exports) {
+},
+"src/demo/DemoEngine.js":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.demoReadings = demoReadings;
@@ -1121,13 +1205,14 @@ function demoReadings(nodes, t) {
     return out;
 }
 
-};
-__modules["src/editor/EnergyFlowCardEditor.ts"] = function(require, module, exports) {
+},
+"src/editor/EnergyFlowCardEditor.js":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EnergyFlowCardEditor = void 0;
 const CardConfig_1 = require("../config/CardConfig");
 const i18n_1 = require("../helpers/i18n");
+const pricingHelper_1 = require("../helpers/pricingHelper");
 const Node_1 = require("../models/Node");
 const dom_1 = require("../renderer/dom");
 const NodeType_1 = require("../types/NodeType");
@@ -1171,7 +1256,7 @@ const editorStyles = `
 .device { border: 1px solid var(--divider-color, #e0e0e0); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 .row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
 label.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--secondary-text-color); flex: 1; min-width: 130px; }
-input[type="text"], select {
+input[type="text"], input[type="number"], select {
   font: inherit; font-size: 14px; padding: 9px 10px; border-radius: 8px; box-sizing: border-box; width: 100%;
   border: 1px solid var(--divider-color, #ccc); background: var(--card-background-color, #fff); color: var(--primary-text-color);
 }
@@ -1726,6 +1811,114 @@ class EnergyFlowCardEditor extends HTMLElement {
         this.commit();
         this.render();
     }
+    pricingConfig() {
+        if (!this.config.pricing)
+            this.config.pricing = { mode: 'none', currency: 'EUR' };
+        return this.config.pricing;
+    }
+    suggestPriceEntity(provider, direction) {
+        if (!this._hass)
+            return undefined;
+        const keywords = (0, pricingHelper_1.providerKeywords)(provider);
+        if (!keywords.length)
+            return undefined;
+        const directionWords = direction === 'import'
+            ? ['import', 'buy', 'purchase', 'afname', 'inkoop', 'current', 'price']
+            : ['export', 'sell', 'return', 'terug', 'teruglever', 'feed', 'price'];
+        const candidates = Object.entries(this._hass.states)
+            .filter(([id, state]) => {
+            const friendly = String(state.attributes?.friendly_name ?? '').toLowerCase();
+            const haystack = `${id} ${friendly}`.toLowerCase();
+            return keywords.some((k) => haystack.includes(k)) && directionWords.some((k) => haystack.includes(k));
+        })
+            .map(([id]) => id);
+        return candidates[0];
+    }
+    renderPricing() {
+        const lang = this.uiLang;
+        const pricing = this.pricingConfig();
+        const wrap = (0, dom_1.html)('div', { class: 'device' }, (0, dom_1.html)('h3', {}, (0, i18n_1.t)('ed_pricing', lang)), (0, dom_1.html)('p', { class: 'hint' }, (0, i18n_1.t)('ed_pricing_hint', lang)));
+        const mode = (0, dom_1.html)('select');
+        for (const [value, key] of [
+            ['none', 'pricing_none'], ['fixed', 'pricing_fixed'], ['entities', 'pricing_entities'], ['dynamic', 'pricing_dynamic'],
+        ]) {
+            const option = (0, dom_1.html)('option', { value }, (0, i18n_1.t)(key, lang));
+            if ((pricing.mode ?? 'none') === value)
+                option.selected = true;
+            mode.append(option);
+        }
+        mode.addEventListener('change', () => {
+            pricing.mode = mode.value;
+            this.commit();
+            this.render();
+        });
+        wrap.append(this.field((0, i18n_1.t)('pricing_mode', lang), mode));
+        if ((pricing.mode ?? 'none') === 'none')
+            return wrap;
+        const currency = (0, dom_1.html)('select');
+        for (const value of ['EUR', 'GBP', 'USD']) {
+            const option = (0, dom_1.html)('option', { value }, value);
+            if ((pricing.currency ?? 'EUR') === value)
+                option.selected = true;
+            currency.append(option);
+        }
+        currency.addEventListener('change', () => { pricing.currency = currency.value; this.commit(); });
+        wrap.append(this.field((0, i18n_1.t)('pricing_currency', lang), currency));
+        if (pricing.mode === 'fixed') {
+            const fixedField = (key, label) => {
+                const input = (0, dom_1.html)('input', { type: 'number', min: '0', step: '0.0001', inputmode: 'decimal' });
+                const current = pricing[key];
+                if (typeof current === 'number')
+                    input.value = String(current);
+                input.addEventListener('change', () => {
+                    const parsed = Number(input.value.replace(',', '.'));
+                    if (input.value.trim() && Number.isFinite(parsed) && parsed >= 0)
+                        pricing[key] = parsed;
+                    else
+                        delete pricing[key];
+                    this.commit();
+                });
+                return this.field(`${label} / kWh`, input);
+            };
+            wrap.append((0, dom_1.html)('div', { class: 'row' }, fixedField('import_price', (0, i18n_1.t)('pricing_import', lang)), fixedField('export_price', (0, i18n_1.t)('pricing_export', lang))));
+            return wrap;
+        }
+        if (pricing.mode === 'dynamic') {
+            const provider = (0, dom_1.html)('select');
+            for (const value of pricingHelper_1.DYNAMIC_PROVIDERS) {
+                const option = (0, dom_1.html)('option', { value }, (0, i18n_1.t)(`provider_${value}`, lang));
+                if ((pricing.provider ?? 'other') === value)
+                    option.selected = true;
+                provider.append(option);
+            }
+            provider.addEventListener('change', () => {
+                pricing.provider = provider.value;
+                if (!pricing.import_price_entity)
+                    pricing.import_price_entity = this.suggestPriceEntity(provider.value, 'import');
+                if (!pricing.export_price_entity)
+                    pricing.export_price_entity = this.suggestPriceEntity(provider.value, 'export');
+                this.commit();
+                this.render();
+            });
+            wrap.append(this.field((0, i18n_1.t)('pricing_provider', lang), provider));
+        }
+        const importEntity = this.entityInput(pricing.import_price_entity, false, (v) => {
+            if (v)
+                pricing.import_price_entity = v;
+            else
+                delete pricing.import_price_entity;
+            this.commit();
+        });
+        const exportEntity = this.entityInput(pricing.export_price_entity, false, (v) => {
+            if (v)
+                pricing.export_price_entity = v;
+            else
+                delete pricing.export_price_entity;
+            this.commit();
+        });
+        wrap.append(this.field((0, i18n_1.t)('pricing_import_entity', lang), importEntity), this.field((0, i18n_1.t)('pricing_export_entity', lang), exportEntity));
+        return wrap;
+    }
     // ----- Stap 3: Voorbeeld --------------------------------------------------------------------
     renderPreview() {
         const lang = this.uiLang;
@@ -1781,7 +1974,7 @@ class EnergyFlowCardEditor extends HTMLElement {
         if (this._hass)
             card.hass = this._hass;
         this.preview = card;
-        return (0, dom_1.html)('div', { class: 'stack' }, (0, dom_1.html)('p', { class: 'hint' }, (0, i18n_1.t)('ed_preview_hint', lang)), this.field((0, i18n_1.t)('ed_layout', lang), layoutSelect), card, (0, dom_1.html)('label', { class: 'check' }, demo, (0, i18n_1.t)('ed_demo', lang)));
+        return (0, dom_1.html)('div', { class: 'stack' }, (0, dom_1.html)('p', { class: 'hint' }, (0, i18n_1.t)('ed_preview_hint', lang)), this.field((0, i18n_1.t)('ed_layout', lang), layoutSelect), this.renderPricing(), card, (0, dom_1.html)('label', { class: 'check' }, demo, (0, i18n_1.t)('ed_demo', lang)));
     }
     errorBox(message) {
         return (0, dom_1.html)('div', { class: 'error' }, `${(0, i18n_1.t)('ed_fix_first', this.uiLang)} ${message}`);
@@ -1789,8 +1982,8 @@ class EnergyFlowCardEditor extends HTMLElement {
 }
 exports.EnergyFlowCardEditor = EnergyFlowCardEditor;
 
-};
-__modules["src/helpers/flowHelper.ts"] = function(require, module, exports) {
+},
+"src/helpers/flowHelper.js":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.flowToHome = flowToHome;
@@ -2013,8 +2206,8 @@ function applyBackupReadings(nodes, connections, readings, demo) {
     }
 }
 
-};
-__modules["src/helpers/groupHelper.ts"] = function(require, module, exports) {
+},
+"src/helpers/groupHelper.js":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.groupedGroups = groupedGroups;
@@ -2086,8 +2279,8 @@ function applyGroupReadings(groups, groupNodes, readings) {
     }
 }
 
-};
-__modules["src/helpers/historyHelper.ts"] = function(require, module, exports) {
+},
+"src/helpers/historyHelper.js":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.fetchHistoryBatch = fetchHistoryBatch;
@@ -2174,8 +2367,8 @@ function unitFactor(unit) {
     return 1;
 }
 
-};
-__modules["src/helpers/i18n.ts"] = function(require, module, exports) {
+},
+"src/helpers/i18n.js":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.t = t;
@@ -2295,6 +2488,31 @@ const nl = {
     ed_layout_flow: "Flow: automatisch en compact",
     ed_layout_circle: "Rond: vaste plekken rond de woning",
     ed_layout_straight: "Recht: van boven naar beneden",
+    ed_pricing: "Energieprijzen",
+    ed_pricing_hint: "Optioneel: gebruik vaste tarieven of Home Assistant-prijssensoren. Leverancierspresets halen zelf geen data op.",
+    pricing_none: "Geen prijsberekening",
+    pricing_fixed: "Vaste tarieven",
+    pricing_entities: "Home Assistant-prijssensoren",
+    pricing_dynamic: "Dynamisch contract",
+    pricing_mode: "Prijsmodel",
+    pricing_provider: "Leverancier / bron",
+    pricing_import: "Importprijs",
+    pricing_export: "Exportprijs",
+    pricing_import_entity: "Import-prijssensor",
+    pricing_export_entity: "Export-prijssensor",
+    pricing_currency: "Valuta",
+    provider_frank: "Frank Energie",
+    provider_zonneplan: "Zonneplan",
+    provider_tibber: "Tibber",
+    provider_anwb: "ANWB Energie",
+    provider_nextenergy: "NextEnergy",
+    provider_nordpool: "Nord Pool",
+    provider_other: "Andere leverancier",
+    current_import_price: "Huidige importprijs",
+    current_export_price: "Huidige exportprijs",
+    current_cost_rate: "Kosten op dit moment",
+    current_revenue_rate: "Opbrengst op dit moment",
+    per_hour: "per uur",
 };
 const en = {
     home: "Home",
@@ -2410,6 +2628,31 @@ const en = {
     ed_layout_flow: "Flow: automatic and compact",
     ed_layout_circle: "Round: fixed spots around the home",
     ed_layout_straight: "Straight: top to bottom",
+    ed_pricing: "Energy prices",
+    ed_pricing_hint: "Optional: use fixed rates or Home Assistant price entities. Supplier presets do not fetch data themselves.",
+    pricing_none: "No price calculation",
+    pricing_fixed: "Fixed rates",
+    pricing_entities: "Home Assistant price entities",
+    pricing_dynamic: "Dynamic contract",
+    pricing_mode: "Price model",
+    pricing_provider: "Supplier / source",
+    pricing_import: "Import price",
+    pricing_export: "Export price",
+    pricing_import_entity: "Import price entity",
+    pricing_export_entity: "Export price entity",
+    pricing_currency: "Currency",
+    provider_frank: "Frank Energie",
+    provider_zonneplan: "Zonneplan",
+    provider_tibber: "Tibber",
+    provider_anwb: "ANWB Energy",
+    provider_nextenergy: "NextEnergy",
+    provider_nordpool: "Nord Pool",
+    provider_other: "Other supplier",
+    current_import_price: "Current import price",
+    current_export_price: "Current export price",
+    current_cost_rate: "Current cost rate",
+    current_revenue_rate: "Current revenue rate",
+    per_hour: "per hour",
 };
 /**
  * Geeft de tekst voor `key` in de taal van Home Assistant (`hass.language`).
@@ -2424,8 +2667,96 @@ function hassLanguage(hass) {
     return hass?.locale?.language ?? hass?.language;
 }
 
-};
-__modules["src/helpers/stateHelper.ts"] = function(require, module, exports) {
+},
+"src/helpers/pricingHelper.js":function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.DYNAMIC_PROVIDERS = void 0;
+exports.readPrices = readPrices;
+exports.currentGridRate = currentGridRate;
+exports.formatCurrency = formatCurrency;
+exports.formatPrice = formatPrice;
+exports.providerKeywords = providerKeywords;
+/** Supported supplier labels. Presets never call supplier APIs; they only guide entity selection. */
+exports.DYNAMIC_PROVIDERS = [
+    'frank',
+    'zonneplan',
+    'tibber',
+    'anwb',
+    'nextenergy',
+    'nordpool',
+    'other',
+];
+function parsePriceState(state, unit) {
+    const value = Number(String(state).replace(',', '.'));
+    if (!Number.isFinite(value))
+        return null;
+    const u = typeof unit === 'string' ? unit.trim().toLowerCase() : '';
+    // Normalize common cent/kWh units to currency/kWh.
+    if (u.includes('ct/kwh') || u.includes('cent/kwh') || u.includes('c/kwh'))
+        return value / 100;
+    return value;
+}
+function entityPrice(hass, entityId) {
+    if (!hass || !entityId)
+        return null;
+    const state = hass.states[entityId];
+    if (!state || state.state === 'unknown' || state.state === 'unavailable')
+        return null;
+    return parsePriceState(state.state, state.attributes?.unit_of_measurement);
+}
+function readPrices(config, hass) {
+    if (config.mode === 'fixed') {
+        return { importPrice: config.importPrice ?? null, exportPrice: config.exportPrice ?? null };
+    }
+    if (config.mode === 'entities' || config.mode === 'dynamic') {
+        return {
+            importPrice: entityPrice(hass, config.importPriceEntity),
+            exportPrice: entityPrice(hass, config.exportPriceEntity),
+        };
+    }
+    return { importPrice: null, exportPrice: null };
+}
+/** Cost/revenue rate in currency per hour from signed grid power. Positive grid = import, negative = export. */
+function currentGridRate(watts, prices) {
+    if (watts === null || watts === 0)
+        return { kind: 'none', value: 0 };
+    if (watts > 0) {
+        return { kind: 'cost', value: prices.importPrice === null ? null : (watts / 1000) * prices.importPrice };
+    }
+    return { kind: 'revenue', value: prices.exportPrice === null ? null : (Math.abs(watts) / 1000) * prices.exportPrice };
+}
+function formatCurrency(value, currency = 'EUR', language, digits = 2) {
+    try {
+        return new Intl.NumberFormat(language || undefined, {
+            style: 'currency',
+            currency,
+            minimumFractionDigits: digits,
+            maximumFractionDigits: digits,
+        }).format(value);
+    }
+    catch {
+        return `${currency} ${value.toFixed(digits)}`;
+    }
+}
+function formatPrice(value, currency = 'EUR', language) {
+    return `${formatCurrency(value, currency, language, 4)}/kWh`;
+}
+/** Entity-name hints used by the dynamic-provider UI for sorting/suggestions only. */
+function providerKeywords(provider) {
+    switch (provider) {
+        case 'frank': return ['frank'];
+        case 'zonneplan': return ['zonneplan'];
+        case 'tibber': return ['tibber'];
+        case 'anwb': return ['anwb'];
+        case 'nextenergy': return ['nextenergy', 'next_energy'];
+        case 'nordpool': return ['nordpool', 'nord_pool'];
+        default: return [];
+    }
+}
+
+},
+"src/helpers/stateHelper.js":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.parsePower = parsePower;
@@ -2517,8 +2848,8 @@ function round(value, decimals) {
     return String(Math.round(value * factor) / factor);
 }
 
-};
-__modules["src/index.ts"] = function(require, module, exports) {
+},
+"src/index.js":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const EnergyFlowCard_1 = require("./card/EnergyFlowCard");
@@ -2536,10 +2867,10 @@ if (!window.customCards.some((c) => c.type === 'energy-flow-card')) {
         preview: true,
     });
 }
-console.info('%c ENERGY-FLOW-CARD %c 0.8.3 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
+console.info('%c ENERGY-FLOW-CARD %c 0.9.0 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
 
-};
-__modules["src/layout/AutoLayout.ts"] = function(require, module, exports) {
+},
+"src/layout/AutoLayout.js":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.STRAIGHT_ROW_GAP = exports.HOME_RADIUS = exports.NODE_RADIUS = void 0;
@@ -2964,8 +3295,8 @@ function straightLayout(nodes, auto, links) {
     return { width: Math.round(width), height: Math.round(height), positions };
 }
 
-};
-__modules["src/models/Connection.ts"] = function(require, module, exports) {
+},
+"src/models/Connection.js":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createConnection = createConnection;
@@ -3017,8 +3348,8 @@ function parentOf(node, nodes) {
     return parent?.type === 'backup' ? parent : undefined;
 }
 
-};
-__modules["src/models/Node.ts"] = function(require, module, exports) {
+},
+"src/models/Node.js":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createNode = createNode;
@@ -3101,8 +3432,8 @@ function fieldLabelKey(field, type) {
     return field.replace(/_entity$/, '');
 }
 
-};
-__modules["src/renderer/ConnectionRenderer.ts"] = function(require, module, exports) {
+},
+"src/renderer/ConnectionRenderer.js":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.computeGeometry = computeGeometry;
@@ -3285,8 +3616,8 @@ function createConnectionElement(conn, from, to, curved, color, orthogonal = fal
     return { el: g, update };
 }
 
-};
-__modules["src/renderer/NodeRenderer.ts"] = function(require, module, exports) {
+},
+"src/renderer/NodeRenderer.js":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.displayNameOf = displayNameOf;
@@ -3458,8 +3789,8 @@ labelPosition = 'below') {
     return { el: g, update };
 }
 
-};
-__modules["src/renderer/PopupRenderer.ts"] = function(require, module, exports) {
+},
+"src/renderer/PopupRenderer.js":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Popup = void 0;
@@ -3571,8 +3902,8 @@ class Popup {
 }
 exports.Popup = Popup;
 
-};
-__modules["src/renderer/dom.ts"] = function(require, module, exports) {
+},
+"src/renderer/dom.js":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.svg = svg;
@@ -3610,8 +3941,8 @@ function setAttr(el, name, value) {
         el.setAttribute(name, value);
 }
 
-};
-__modules["src/types/EntityStatus.ts"] = function(require, module, exports) {
+},
+"src/types/EntityStatus.js":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EntityStatus = void 0;
@@ -3650,8 +3981,8 @@ function hasValue(status) {
     return status === EntityStatus.Valid || status === EntityStatus.Zero || status === EntityStatus.Charging;
 }
 
-};
-__modules["src/types/NodeType.ts"] = function(require, module, exports) {
+},
+"src/types/NodeType.js":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TYPES_WITH_DEFAULT_ICON = exports.NODE_TYPES = void 0;
@@ -3715,15 +4046,15 @@ function roleOf(type) {
 /** Home, Grid, PV en Battery krijgen standaard een icoon; bij andere apparaten is het optioneel. */
 exports.TYPES_WITH_DEFAULT_ICON = new Set(['home', 'grid', 'solar', 'battery', 'backup']);
 
-};
-__modules["src/types/hass.ts"] = function(require, module, exports) {
+},
+"src/types/hass.js":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 
+},
 };
-const __cache = Object.create(null);
-function __normalize(parts){const out=[];for(const p of parts){if(!p||p==='.')continue;if(p==='..')out.pop();else out.push(p);}return out.join('/');}
-function __resolve(from, req){if(!req.startsWith('.')) throw new Error('External module not bundled: '+req); const base=from.split('/'); base.pop(); let id=__normalize(base.concat(req.split('/'))); if(__modules[id]) return id; if(__modules[id+'.ts']) return id+'.ts'; if(__modules[id+'/index.ts']) return id+'/index.ts'; throw new Error('Module not found: '+req+' from '+from);}
-function __require(id){if(__cache[id]) return __cache[id].exports; const fn=__modules[id]; if(!fn) throw new Error('Module not found: '+id); const module={exports:{}}; __cache[id]=module; const local=(req)=>__require(__resolve(id,req)); fn(local,module,module.exports); return module.exports;}
-__require('src/index.ts');
+const __cache={};
+function __norm(p){const a=[];for(const x of p.split("/")){if(!x||x===".")continue;if(x==="..")a.pop();else a.push(x);}return a.join("/");}
+function __req(id,from){let target=id;if(id.startsWith(".")){const base=from.slice(0,from.lastIndexOf("/")+1);target=__norm(base+id);}else target=__norm(id);if(!target.endsWith(".js")) target+=".js";const key=target;if(__cache[key])return __cache[key].exports;const fn=__mods[key];if(!fn)throw new Error("Module not found: "+key+" from "+from);const m={exports:{}};__cache[key]=m;fn((x)=>__req(x,key),m,m.exports);return m.exports;}
+__req("src/index.js","src/index.js");
 })();

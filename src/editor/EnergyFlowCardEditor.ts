@@ -1,5 +1,6 @@
-import { CardConfig, DeviceGroupConfig, ResolvedConfig, normalizeConfig } from '../config/CardConfig';
+import { CardConfig, DeviceGroupConfig, PricingConfig, ResolvedConfig, normalizeConfig } from '../config/CardConfig';
 import { hassLanguage, t } from '../helpers/i18n';
+import { DYNAMIC_PROVIDERS, providerKeywords } from '../helpers/pricingHelper';
 import type { ConnectionConfig } from '../models/Connection';
 import { NodeConfig, advancedFieldsFor, fieldLabelKey, generateId } from '../models/Node';
 import { html } from '../renderer/dom';
@@ -48,7 +49,7 @@ const editorStyles = `
 .device { border: 1px solid var(--divider-color, #e0e0e0); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 .row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
 label.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--secondary-text-color); flex: 1; min-width: 130px; }
-input[type="text"], select {
+input[type="text"], input[type="number"], select {
   font: inherit; font-size: 14px; padding: 9px 10px; border-radius: 8px; box-sizing: border-box; width: 100%;
   border: 1px solid var(--divider-color, #ccc); background: var(--card-background-color, #fff); color: var(--primary-text-color);
 }
@@ -633,6 +634,106 @@ export class EnergyFlowCardEditor extends HTMLElement {
     this.render();
   }
 
+  private pricingConfig(): PricingConfig {
+    if (!this.config.pricing) this.config.pricing = { mode: 'none', currency: 'EUR' };
+    return this.config.pricing;
+  }
+
+  private suggestPriceEntity(provider: string, direction: 'import' | 'export'): string | undefined {
+    if (!this._hass) return undefined;
+    const keywords = providerKeywords(provider);
+    if (!keywords.length) return undefined;
+    const directionWords = direction === 'import'
+      ? ['import', 'buy', 'purchase', 'afname', 'inkoop', 'current', 'price']
+      : ['export', 'sell', 'return', 'terug', 'teruglever', 'feed', 'price'];
+    const candidates = Object.entries(this._hass.states)
+      .filter(([id, state]) => {
+        const friendly = String(state.attributes?.friendly_name ?? '').toLowerCase();
+        const haystack = `${id} ${friendly}`.toLowerCase();
+        return keywords.some((k) => haystack.includes(k)) && directionWords.some((k) => haystack.includes(k));
+      })
+      .map(([id]) => id);
+    return candidates[0];
+  }
+
+  private renderPricing(): HTMLElement {
+    const lang = this.uiLang;
+    const pricing = this.pricingConfig();
+    const wrap = html('div', { class: 'device' },
+      html('h3', {}, t('ed_pricing', lang)),
+      html('p', { class: 'hint' }, t('ed_pricing_hint', lang)),
+    );
+
+    const mode = html('select');
+    for (const [value, key] of [
+      ['none', 'pricing_none'], ['fixed', 'pricing_fixed'], ['entities', 'pricing_entities'], ['dynamic', 'pricing_dynamic'],
+    ] as const) {
+      const option = html('option', { value }, t(key, lang));
+      if ((pricing.mode ?? 'none') === value) option.selected = true;
+      mode.append(option);
+    }
+    mode.addEventListener('change', () => {
+      pricing.mode = mode.value as PricingConfig['mode'];
+      this.commit();
+      this.render();
+    });
+    wrap.append(this.field(t('pricing_mode', lang), mode));
+
+    if ((pricing.mode ?? 'none') === 'none') return wrap;
+
+    const currency = html('select');
+    for (const value of ['EUR', 'GBP', 'USD']) {
+      const option = html('option', { value }, value);
+      if ((pricing.currency ?? 'EUR') === value) option.selected = true;
+      currency.append(option);
+    }
+    currency.addEventListener('change', () => { pricing.currency = currency.value; this.commit(); });
+    wrap.append(this.field(t('pricing_currency', lang), currency));
+
+    if (pricing.mode === 'fixed') {
+      const fixedField = (key: 'import_price' | 'export_price', label: string) => {
+        const input = html('input', { type: 'number', min: '0', step: '0.0001', inputmode: 'decimal' });
+        const current = pricing[key];
+        if (typeof current === 'number') input.value = String(current);
+        input.addEventListener('change', () => {
+          const parsed = Number(input.value.replace(',', '.'));
+          if (input.value.trim() && Number.isFinite(parsed) && parsed >= 0) pricing[key] = parsed;
+          else delete pricing[key];
+          this.commit();
+        });
+        return this.field(`${label} / kWh`, input);
+      };
+      wrap.append(html('div', { class: 'row' }, fixedField('import_price', t('pricing_import', lang)), fixedField('export_price', t('pricing_export', lang))));
+      return wrap;
+    }
+
+    if (pricing.mode === 'dynamic') {
+      const provider = html('select');
+      for (const value of DYNAMIC_PROVIDERS) {
+        const option = html('option', { value }, t(`provider_${value}`, lang));
+        if ((pricing.provider ?? 'other') === value) option.selected = true;
+        provider.append(option);
+      }
+      provider.addEventListener('change', () => {
+        pricing.provider = provider.value as PricingConfig['provider'];
+        if (!pricing.import_price_entity) pricing.import_price_entity = this.suggestPriceEntity(provider.value, 'import');
+        if (!pricing.export_price_entity) pricing.export_price_entity = this.suggestPriceEntity(provider.value, 'export');
+        this.commit();
+        this.render();
+      });
+      wrap.append(this.field(t('pricing_provider', lang), provider));
+    }
+
+    const importEntity = this.entityInput(pricing.import_price_entity, false, (v) => {
+      if (v) pricing.import_price_entity = v; else delete pricing.import_price_entity; this.commit();
+    });
+    const exportEntity = this.entityInput(pricing.export_price_entity, false, (v) => {
+      if (v) pricing.export_price_entity = v; else delete pricing.export_price_entity; this.commit();
+    });
+    wrap.append(this.field(t('pricing_import_entity', lang), importEntity), this.field(t('pricing_export_entity', lang), exportEntity));
+    return wrap;
+  }
+
   // ----- Stap 3: Voorbeeld --------------------------------------------------------------------
 
   private renderPreview(): HTMLElement {
@@ -686,6 +787,7 @@ export class EnergyFlowCardEditor extends HTMLElement {
       { class: 'stack' },
       html('p', { class: 'hint' }, t('ed_preview_hint', lang)),
       this.field(t('ed_layout', lang), layoutSelect),
+      this.renderPricing(),
       card,
       html('label', { class: 'check' }, demo, t('ed_demo', lang)),
     );

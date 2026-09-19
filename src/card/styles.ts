@@ -30,6 +30,15 @@ ha-card.fallback {
   border: 1px solid var(--divider-color, #e0e0e0);
 }
 
+.price-badge {
+  position: absolute; top: 10px; right: 12px; z-index: 1;
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end;
+  padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 500;
+  color: var(--secondary-text-color, #727272);
+  border: 1px solid var(--divider-color, #e0e0e0);
+  background: color-mix(in srgb, var(--card-background-color, #fff) 84%, transparent);
+}
+
 .empty { padding: 32px 24px; text-align: center; }
 .empty strong { display: block; font-size: 15px; margin-bottom: 6px; }
 .empty span { color: var(--secondary-text-color, #727272); font-size: 14px; line-height: 1.4; }

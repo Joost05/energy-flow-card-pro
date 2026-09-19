@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { describe, it, test } from 'node:test';
 import { ConfigError, normalizeConfig } from '../src/config/CardConfig';
 import { generateId } from '../src/models/Node';
 import { normalizeType } from '../src/types/NodeType';
@@ -189,4 +189,25 @@ describe('optionele apparaatgroepen', () => {
     });
     assert.equal(cfg.groups[0]!.display, 'individual');
   });
+});
+
+test('pricing defaults to none and demo gets example fixed tariffs', () => {
+  assert.equal(normalizeConfig({}).pricing.mode, 'none');
+  const demo = normalizeConfig({ demo: true });
+  assert.equal(demo.pricing.mode, 'fixed');
+  assert.equal(demo.pricing.importPrice, 0.31);
+  assert.equal(demo.pricing.exportPrice, 0.09);
+});
+
+test('fixed pricing accepts independent import and export tariffs', () => {
+  const cfg = normalizeConfig({ pricing: { mode: 'fixed', import_price: 0.32, export_price: 0.08 } });
+  assert.equal(cfg.pricing.importPrice, 0.32);
+  assert.equal(cfg.pricing.exportPrice, 0.08);
+});
+
+test('dynamic pricing preserves provider and HA price entities', () => {
+  const cfg = normalizeConfig({ pricing: { mode: 'dynamic', provider: 'frank', import_price_entity: 'sensor.buy', export_price_entity: 'sensor.sell' } });
+  assert.equal(cfg.pricing.provider, 'frank');
+  assert.equal(cfg.pricing.importPriceEntity, 'sensor.buy');
+  assert.equal(cfg.pricing.exportPriceEntity, 'sensor.sell');
 });
