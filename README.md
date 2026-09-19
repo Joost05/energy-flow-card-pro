@@ -13,18 +13,31 @@ A custom Home Assistant Lovelace card for advanced live energy flows, device-lev
 - Group detail popups with member values and 24-hour history
 - Icon dropdown with common MDI presets plus a custom `mdi:` option
 - Optional Home power sensor or automatic Home calculation with reconstructed 24-hour history
-- Detail popup with 24-hour graph, peak power, peak time, average power and extra measurements
+- Detail popup with interactive 24-hour graph, point-in-time inspection, peak power, peak time, average power and extra measurements
 - Background history preloading and caching for fast popup graphs
 - Home Assistant entity pickers in the visual editor
 - Dutch and English UI, following the active Home Assistant frontend language
 - Light and dark theme support through Home Assistant theme variables
 - Responsive layout for desktop, tablet and mobile
 - Optional electricity pricing with fixed import/export tariffs or Home Assistant price entities
-- Live grid cost/revenue rate plus **Revenue today** in the Grid detail popup
+- Live grid cost/revenue rate plus signed **Revenue today** (export revenue minus import cost) in the Grid detail popup
 - Optional three-phase Grid detail: L1/L2/L3 power history in one graph, plus optional phase voltage/current measurements
 - Demo mode with example energy prices for testing without sensors
 
 ## Version history
+
+### v0.10.2
+
+- Added interactive inspection to every 24-hour graph: hover on desktop or tap/drag on touch devices to view the exact time and power.
+- The three-phase graph inspector shows L1, L2, L3 and the combined total for the selected time.
+- Tapped values remain pinned so they are easy to read on phones and tablets.
+- **Revenue today** is now a signed daily Grid result: export revenue minus import cost, so import-only days correctly show a negative amount.
+
+### v0.10.1
+
+- Automatically derives L1 as `total - L2 - L3` when a meter does not expose a separate L1 power entity.
+- Works for both the live grid details and the optional three-phase 24-hour graph.
+- Especially useful for HomeWizard P1 setups where L2/L3 are exposed separately but L1 is implicit in total power.
 
 ### v0.10.0
 
@@ -271,6 +284,12 @@ Currently supported:
 - Dutch
 
 Device names entered by the user are never translated automatically.
+
+## Interactive history graphs
+
+All 24-hour power graphs can be inspected directly. Hover with a mouse or tap/drag on a touch device to show the time and power at that point. When the Grid phase view is enabled, the inspector shows L1, L2, L3 and their combined total.
+
+When pricing and cumulative Grid import/export energy entities are configured, **Revenue today** is a signed financial result: export revenue minus import cost. It can therefore be negative on a day where import costs are higher than feed-in revenue.
 
 ## Development
 

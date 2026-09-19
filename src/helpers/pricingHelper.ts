@@ -68,86 +68,151 @@ interface RawHistoryState {
   last_updated?: string;
 }
 
-/** Estimate today's feed-in revenue from the configured cumulative export-energy sensor.
- * For price entities, historic price changes are used when available.
+export interface TodayGridFinancials {
+  importCost: number;
+  exportRevenue: number;
+  /** Signed balance: export revenue minus import cost. Negative means net cost today. */
+  balance: number;
+}
+
+function rawHistoryMap(response: RawHistoryState[][] | undefined, ids: readonly string[]): Map<string, RawHistoryState[]> {
+  const byId = new Map<string, RawHistoryState[]>();
+  for (let i = 0; i < (response ?? []).length; i++) {
+    const arr = response?.[i] ?? [];
+    const id = arr.find((x) => x.entity_id)?.entity_id ?? ids[i];
+    if (id) byId.set(id, arr);
+  }
+  return byId;
+}
+
+function cumulativeEnergyPoints(
+  states: readonly RawHistoryState[],
+  currentState: { state: string; attributes?: Record<string, unknown> } | undefined,
+  now: number,
+): Array<{ t: number; v: number }> {
+  if (!currentState) return [];
+  const unit = currentState.attributes?.unit_of_measurement;
+  const points: Array<{ t: number; v: number }> = [];
+  for (const s of states) {
+    const n = Number(String(s.state).replace(',', '.'));
+    const stamp = s.last_changed ?? s.last_updated;
+    if (!Number.isFinite(n) || !stamp) continue;
+    points.push({ t: Date.parse(stamp), v: energyToKWh(n, unit) });
+  }
+  const current = Number(String(currentState.state).replace(',', '.'));
+  if (Number.isFinite(current)) points.push({ t: now, v: energyToKWh(current, unit) });
+  points.sort((a, b) => a.t - b.t);
+  return points;
+}
+
+function historicPricePoints(
+  states: readonly RawHistoryState[],
+  currentState: { attributes?: Record<string, unknown> } | undefined,
+): Array<{ t: number; v: number }> {
+  const unit = currentState?.attributes?.unit_of_measurement;
+  const points: Array<{ t: number; v: number }> = [];
+  for (const s of states) {
+    const value = parsePriceState(s.state, unit);
+    const stamp = s.last_changed ?? s.last_updated;
+    if (value === null || !stamp) continue;
+    points.push({ t: Date.parse(stamp), v: value });
+  }
+  points.sort((a, b) => a.t - b.t);
+  return points;
+}
+
+function integrateCumulativeEnergy(
+  energyPoints: readonly { t: number; v: number }[],
+  fallbackPrice: number,
+  pricePoints: readonly { t: number; v: number }[],
+): number {
+  if (energyPoints.length < 2) return 0;
+  const priceAt = (time: number): number => {
+    let value = fallbackPrice;
+    for (const point of pricePoints) {
+      if (point.t > time) break;
+      value = point.v;
+    }
+    return value;
+  };
+  let total = 0;
+  for (let i = 1; i < energyPoints.length; i++) {
+    const previous = energyPoints[i - 1]!;
+    const current = energyPoints[i]!;
+    let delta = current.v - previous.v;
+    if (delta < 0) delta = current.v; // total_increasing reset
+    if (delta <= 0) continue;
+    total += delta * priceAt(current.t);
+  }
+  return total;
+}
+
+/**
+ * Calculate today's signed grid financial balance from cumulative import/export energy.
+ * Positive = net feed-in revenue. Negative = net import cost.
  */
+export async function fetchTodayGridFinancials(
+  hass: Hass,
+  importEnergyEntity: string | undefined,
+  exportEnergyEntity: string | undefined,
+  pricing: ResolvedPricingConfig,
+  now = Date.now(),
+): Promise<TodayGridFinancials | null> {
+  if (!hass.callApi || pricing.mode === 'none') return null;
+  const importState = importEnergyEntity ? hass.states[importEnergyEntity] : undefined;
+  const exportState = exportEnergyEntity ? hass.states[exportEnergyEntity] : undefined;
+  if (!importState && !exportState) return null;
+
+  const startDate = new Date(now);
+  startDate.setHours(0, 0, 0, 0);
+  const start = startDate.getTime();
+  const ids: string[] = [];
+  if (importEnergyEntity) ids.push(importEnergyEntity);
+  if (exportEnergyEntity && exportEnergyEntity !== importEnergyEntity) ids.push(exportEnergyEntity);
+  if (pricing.mode === 'entities') {
+    if (pricing.importPriceEntity && !ids.includes(pricing.importPriceEntity)) ids.push(pricing.importPriceEntity);
+    if (pricing.exportPriceEntity && !ids.includes(pricing.exportPriceEntity)) ids.push(pricing.exportPriceEntity);
+  }
+  if (ids.length === 0) return null;
+
+  const path = `history/period/${new Date(start).toISOString()}?filter_entity_id=${encodeURIComponent(ids.join(','))}` +
+    `&end_time=${encodeURIComponent(new Date(now).toISOString())}&minimal_response&no_attributes&significant_changes_only`;
+
+  try {
+    const response = await hass.callApi<RawHistoryState[][]>('GET', path);
+    const byId = rawHistoryMap(response, ids);
+    const currentPrices = readPrices(pricing, hass);
+    const importPrice = currentPrices.importPrice;
+    const exportPrice = currentPrices.exportPrice;
+
+    const importPricePoints = pricing.mode === 'entities' && pricing.importPriceEntity
+      ? historicPricePoints(byId.get(pricing.importPriceEntity) ?? [], hass.states[pricing.importPriceEntity])
+      : [];
+    const exportPricePoints = pricing.mode === 'entities' && pricing.exportPriceEntity
+      ? historicPricePoints(byId.get(pricing.exportPriceEntity) ?? [], hass.states[pricing.exportPriceEntity])
+      : [];
+
+    const importCost = importEnergyEntity && importState && importPrice !== null
+      ? integrateCumulativeEnergy(cumulativeEnergyPoints(byId.get(importEnergyEntity) ?? [], importState, now), importPrice, importPricePoints)
+      : 0;
+    const exportRevenue = exportEnergyEntity && exportState && exportPrice !== null
+      ? integrateCumulativeEnergy(cumulativeEnergyPoints(byId.get(exportEnergyEntity) ?? [], exportState, now), exportPrice, exportPricePoints)
+      : 0;
+
+    if ((importEnergyEntity && importPrice === null) || (exportEnergyEntity && exportPrice === null)) return null;
+    return { importCost, exportRevenue, balance: exportRevenue - importCost };
+  } catch {
+    return null;
+  }
+}
+
+/** Backwards-compatible helper: feed-in revenue only. */
 export async function fetchTodayExportRevenue(
   hass: Hass,
   exportEnergyEntity: string,
   pricing: ResolvedPricingConfig,
   now = Date.now(),
 ): Promise<number | null> {
-  if (!hass.callApi || pricing.mode === 'none') return null;
-  const energyState = hass.states[exportEnergyEntity];
-  if (!energyState || energyState.state === 'unknown' || energyState.state === 'unavailable') return null;
-
-  const startDate = new Date(now);
-  startDate.setHours(0, 0, 0, 0);
-  const start = startDate.getTime();
-  const ids = [exportEnergyEntity];
-  if (pricing.mode === 'entities' && pricing.exportPriceEntity) ids.push(pricing.exportPriceEntity);
-  const path = `history/period/${new Date(start).toISOString()}?filter_entity_id=${encodeURIComponent(ids.join(','))}` +
-    `&end_time=${encodeURIComponent(new Date(now).toISOString())}&minimal_response&no_attributes&significant_changes_only`;
-
-  try {
-    const response = await hass.callApi<RawHistoryState[][]>('GET', path);
-    const byId = new Map<string, RawHistoryState[]>();
-    for (let i = 0; i < (response ?? []).length; i++) {
-      const arr = response?.[i] ?? [];
-      const id = arr.find((x) => x.entity_id)?.entity_id ?? ids[i];
-      if (id) byId.set(id, arr);
-    }
-
-    const energyUnit = energyState.attributes?.unit_of_measurement;
-    const energyPoints: Array<{ t: number; v: number }> = [];
-    for (const s of byId.get(exportEnergyEntity) ?? []) {
-      const n = Number(String(s.state).replace(',', '.'));
-      const stamp = s.last_changed ?? s.last_updated;
-      if (!Number.isFinite(n) || !stamp) continue;
-      energyPoints.push({ t: Date.parse(stamp), v: energyToKWh(n, energyUnit) });
-    }
-    const currentEnergy = Number(String(energyState.state).replace(',', '.'));
-    if (Number.isFinite(currentEnergy)) energyPoints.push({ t: now, v: energyToKWh(currentEnergy, energyUnit) });
-    energyPoints.sort((a, b) => a.t - b.t);
-    if (energyPoints.length < 2) return null;
-
-    const fixedPrice = pricing.mode === 'fixed' ? pricing.exportPrice ?? null : null;
-    const currentPrice = pricing.mode === 'entities' ? entityPrice(hass, pricing.exportPriceEntity) : fixedPrice;
-    if (currentPrice === null) return null;
-
-    const pricePoints: Array<{ t: number; v: number }> = [];
-    if (pricing.mode === 'entities' && pricing.exportPriceEntity) {
-      const unit = hass.states[pricing.exportPriceEntity]?.attributes?.unit_of_measurement;
-      for (const s of byId.get(pricing.exportPriceEntity) ?? []) {
-        const v = parsePriceState(s.state, unit);
-        const stamp = s.last_changed ?? s.last_updated;
-        if (v === null || !stamp) continue;
-        pricePoints.push({ t: Date.parse(stamp), v });
-      }
-      pricePoints.sort((a, b) => a.t - b.t);
-    }
-
-    const priceAt = (t: number): number => {
-      if (fixedPrice !== null) return fixedPrice;
-      let found = currentPrice;
-      for (const p of pricePoints) {
-        if (p.t > t) break;
-        found = p.v;
-      }
-      return found;
-    };
-
-    let revenue = 0;
-    for (let i = 1; i < energyPoints.length; i++) {
-      const prev = energyPoints[i - 1]!;
-      const cur = energyPoints[i]!;
-      let delta = cur.v - prev.v;
-      if (delta < 0) delta = cur.v; // total_increasing reset
-      if (delta <= 0) continue;
-      revenue += delta * priceAt(cur.t);
-    }
-    return revenue;
-  } catch {
-    return null;
-  }
+  const result = await fetchTodayGridFinancials(hass, undefined, exportEnergyEntity, pricing, now);
+  return result?.exportRevenue ?? null;
 }

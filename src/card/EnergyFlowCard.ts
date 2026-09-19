@@ -9,7 +9,8 @@ import {
 } from '../helpers/flowHelper';
 import { HistoryPoint, bucketize, fetchHistoryBatch } from '../helpers/historyHelper';
 import { hassLanguage, t } from '../helpers/i18n';
-import { currentGridRate, fetchTodayExportRevenue, formatCurrency, formatPrice, readPrices } from '../helpers/pricingHelper';
+import { deriveL1History, deriveL1Power } from '../helpers/phaseHelper';
+import { currentGridRate, fetchTodayGridFinancials, formatCurrency, formatPrice, readPrices } from '../helpers/pricingHelper';
 import { applyGroupReadings, buildDisplayGraph } from '../helpers/groupHelper';
 import { formatPower, parsePower } from '../helpers/stateHelper';
 import { HOME_RADIUS, NODE_RADIUS, computeLayout } from '../layout/AutoLayout';
@@ -52,8 +53,8 @@ export class EnergyFlowCard extends HTMLElement {
   private historyBundleInFlight?: Promise<void>;
   private historyBundleFetchedAt = 0;
   private preloadTimer?: number;
-  private todayExportRevenue?: { value: number | null; fetchedAt: number };
-  private todayExportRevenueInFlight?: Promise<void>;
+  private todayGridBalance?: { value: number | null; fetchedAt: number };
+  private todayGridBalanceInFlight?: Promise<void>;
   private timer?: number;
   private demoStart = 0;
   private reducedMotion = false;
@@ -80,8 +81,8 @@ export class EnergyFlowCard extends HTMLElement {
     this.historyBundleInFlight = undefined;
     this.historyBundleFetchedAt = 0;
     this.cancelHistoryPreload();
-    this.todayExportRevenue = undefined;
-    this.todayExportRevenueInFlight = undefined;
+    this.todayGridBalance = undefined;
+    this.todayGridBalanceInFlight = undefined;
     this.buildStructure();
     this.syncTimer();
     this.update();
@@ -92,7 +93,7 @@ export class EnergyFlowCard extends HTMLElement {
     if (!this.config?.demo) {
       this.update();
       this.scheduleHistoryPreload();
-      void this.ensureTodayExportRevenue();
+      void this.ensureTodayGridBalance();
     }
   }
 
@@ -126,7 +127,7 @@ export class EnergyFlowCard extends HTMLElement {
     if (this.config) {
       this.update();
       this.scheduleHistoryPreload();
-      void this.ensureTodayExportRevenue();
+      void this.ensureTodayGridBalance();
     }
   }
 
@@ -340,7 +341,7 @@ export class EnergyFlowCard extends HTMLElement {
     this.openNodeId = nodeId;
     this.popup.open(model, this.nodeEls.get(nodeId)?.el);
     void this.ensureHistory(nodeId);
-    if (this.config?.nodes.find((n) => n.id === nodeId)?.type === 'grid') void this.ensureTodayExportRevenue();
+    if (this.config?.nodes.find((n) => n.id === nodeId)?.type === 'grid') void this.ensureTodayGridBalance();
   }
 
   private closePopup(): void {
@@ -387,6 +388,10 @@ export class EnergyFlowCard extends HTMLElement {
         const id = node.config[field];
         if (typeof id === 'string' && id) rows.push({ label: t(fieldLabelKey(field, node.type), lang), value: this.formatEntity(id) });
       }
+      if (node.type === 'grid' && !node.config.phase_l1_power_entity) {
+        const l1 = this.derivedLiveL1(node, reading.watts);
+        if (l1 !== null) rows.push({ label: t('phase_l1_power_calculated', lang), value: `${l1 < 0 ? '−' : ''}${formatPower(l1, cfg.powerFormat)}` });
+      }
       for (const extra of node.config.entities ?? []) {
         const friendly = this._hass?.states[extra.entity]?.attributes.friendly_name;
         const label = extra.name ?? (typeof friendly === 'string' ? friendly : extra.entity);
@@ -405,8 +410,8 @@ export class EnergyFlowCard extends HTMLElement {
           value: `${formatCurrency(rate.value, cfg.pricing.currency, lang, 3)} ${t('per_hour', lang)}`,
         });
       }
-      if (this.todayExportRevenue?.value !== null && this.todayExportRevenue?.value !== undefined) {
-        rows.push({ label: t('revenue_today', lang), value: formatCurrency(this.todayExportRevenue.value, cfg.pricing.currency, lang, 2) });
+      if (this.todayGridBalance?.value !== null && this.todayGridBalance?.value !== undefined) {
+        rows.push({ label: t('revenue_today', lang), value: formatCurrency(this.todayGridBalance.value, cfg.pricing.currency, lang, 2) });
       }
     }
 
@@ -443,6 +448,26 @@ export class EnergyFlowCard extends HTMLElement {
     };
   }
 
+  private derivedL1Key(node: EnergyNode): string {
+    return `__derived_l1__${node.id}`;
+  }
+
+  /** Live L1 fallback for meters (notably HomeWizard P1) that expose total + L2 + L3 only. */
+  private derivedLiveL1(node: EnergyNode, totalWatts: number | null): number | null {
+    if (node.type !== 'grid' || node.config.phase_l1_power_entity) return null;
+    const l2Id = node.config.phase_l2_power_entity;
+    const l3Id = node.config.phase_l3_power_entity;
+    if (!l2Id || !l3Id || !this._hass) return null;
+    const read = (id: string): number | null => {
+      const entity = this._hass?.states[id];
+      if (!entity || entity.state === 'unknown' || entity.state === 'unavailable') return null;
+      const value = parsePower(entity.state, entity.attributes?.unit_of_measurement);
+      if (value === null) return null;
+      return node.invert ? -value : value;
+    };
+    return deriveL1Power(totalWatts, read(l2Id), read(l3Id));
+  }
+
   private phasePopupModel(node: EnergyNode, totalHistory: HistoryState): PopupModel['phases'] | undefined {
     const cfg = this.config;
     if (!cfg || node.type !== 'grid') return undefined;
@@ -460,11 +485,14 @@ export class EnergyFlowCard extends HTMLElement {
     const demoSeries = cfg.demo && totalHistory.kind === 'ready'
       ? this.demoPhaseHistory(totalHistory)
       : undefined;
-    const series = labels.map((label, index) => ({
-      label,
-      cssClass: classes[index]!,
-      history: demoSeries?.[index] ?? (ids[index] ? (this.phaseHistory.get(ids[index]!) ?? { kind: 'loading' as const }) : { kind: 'none' as const }),
-    }));
+    const series = labels.map((label, index) => {
+      const key = ids[index] ?? (index === 0 && ids[1] && ids[2] ? this.derivedL1Key(node) : undefined);
+      return {
+        label,
+        cssClass: classes[index]!,
+        history: demoSeries?.[index] ?? (key ? (this.phaseHistory.get(key) ?? { kind: 'loading' as const }) : { kind: 'none' as const }),
+      };
+    });
 
     return {
       enabled: this.phaseGraphEnabled.has(node.id),
@@ -492,24 +520,31 @@ export class EnergyFlowCard extends HTMLElement {
     }));
   }
 
-  private async ensureTodayExportRevenue(): Promise<void> {
+  private async ensureTodayGridBalance(): Promise<void> {
     const cfg = this.config;
     if (!cfg || cfg.pricing.mode === 'none') return;
-    if (this.todayExportRevenue && Date.now() - this.todayExportRevenue.fetchedAt < HISTORY_TTL_MS) return;
-    if (this.todayExportRevenueInFlight) return this.todayExportRevenueInFlight;
+    if (this.todayGridBalance && Date.now() - this.todayGridBalance.fetchedAt < HISTORY_TTL_MS) return;
+    if (this.todayGridBalanceInFlight) return this.todayGridBalanceInFlight;
 
     const grid = cfg.nodes.find((n) => n.type === 'grid');
     if (!grid) return;
+    const importEnergyEntity = grid.config.energy_import_entity;
     const exportEnergyEntity = grid.config.energy_export_entity;
-    if (!cfg.demo && !exportEnergyEntity) return;
+    if (!cfg.demo && !importEnergyEntity && !exportEnergyEntity) return;
 
     const task = (async () => {
-      const value = cfg.demo ? 1.24 : this._hass && exportEnergyEntity ? await fetchTodayExportRevenue(this._hass, exportEnergyEntity, cfg.pricing) : null;
-      this.todayExportRevenue = { value, fetchedAt: Date.now() };
+      const result = cfg.demo
+        ? { balance: -2.18 }
+        : this._hass
+          ? await fetchTodayGridFinancials(this._hass, importEnergyEntity, exportEnergyEntity, cfg.pricing)
+          : null;
+      this.todayGridBalance = { value: result?.balance ?? null, fetchedAt: Date.now() };
       this.refreshOpenPopup(grid.id);
     })();
-    this.todayExportRevenueInFlight = task;
-    try { await task; } finally { if (this.todayExportRevenueInFlight === task) this.todayExportRevenueInFlight = undefined; }
+    this.todayGridBalanceInFlight = task;
+    try { await task; } finally {
+      if (this.todayGridBalanceInFlight === task) this.todayGridBalanceInFlight = undefined;
+    }
   }
 
   private async ensureHistory(nodeId: string): Promise<void> {
@@ -645,6 +680,20 @@ export class EnergyFlowCard extends HTMLElement {
         const points = perNode.get(node.id) ?? [];
         this.storeHistory(node, points.length >= 2 ? { kind: 'ready', points, start, end } : { kind: 'none' }, fetchedAt);
       }
+
+      // Sommige meters (o.a. HomeWizard P1) publiceren totaal + L2 + L3, maar geen losse L1.
+      // Leid L1 dan historisch af als totaal − L2 − L3, zodat de driefasegrafiek toch compleet is.
+      if (grid && !grid.config.phase_l1_power_entity && grid.config.phase_l2_power_entity && grid.config.phase_l3_power_entity) {
+        const total = this.history.get(grid.id)?.state;
+        const l2 = this.phaseHistory.get(grid.config.phase_l2_power_entity);
+        const l3 = this.phaseHistory.get(grid.config.phase_l3_power_entity);
+        if (total?.kind === 'ready' && l2?.kind === 'ready' && l3?.kind === 'ready') {
+          const points = deriveL1History(total.points, l2.points, l3.points);
+          this.phaseHistory.set(this.derivedL1Key(grid), points.length >= 2 ? { kind: 'ready', points, start, end } : { kind: 'none' });
+        } else {
+          this.phaseHistory.set(this.derivedL1Key(grid), { kind: 'none' });
+        }
+      }
       this.historyBundleFetchedAt = fetchedAt;
     } catch {
       const fetchedAt = Date.now();
@@ -653,6 +702,7 @@ export class EnergyFlowCard extends HTMLElement {
       if (grid) for (const id of [grid.config.phase_l1_power_entity, grid.config.phase_l2_power_entity, grid.config.phase_l3_power_entity]) {
         if (id) this.phaseHistory.set(id, { kind: 'none' });
       }
+      if (grid && !grid.config.phase_l1_power_entity && grid.config.phase_l2_power_entity && grid.config.phase_l3_power_entity) this.phaseHistory.set(this.derivedL1Key(grid), { kind: 'none' });
       this.historyBundleFetchedAt = fetchedAt;
       if (grid) this.refreshOpenPopup(grid.id);
     }

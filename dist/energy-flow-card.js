@@ -1,8 +1,7 @@
-// energy-flow-card-pro v0.10.0 - generated bundle
-(function(){
-'use strict';
-const __modules={
-"src/card/EnergyFlowCard.ts":function(require,module,exports){
+// Energy Flow Card Pro bundled build (custom TypeScript bundler)
+(()=>{
+const __mods=Object.create(null),__cache=Object.create(null);
+__mods["src/card/EnergyFlowCard.js"]=function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ConfigError = exports.EnergyFlowCard = void 0;
@@ -12,6 +11,7 @@ const DemoEngine_1 = require("../demo/DemoEngine");
 const flowHelper_1 = require("../helpers/flowHelper");
 const historyHelper_1 = require("../helpers/historyHelper");
 const i18n_1 = require("../helpers/i18n");
+const phaseHelper_1 = require("../helpers/phaseHelper");
 const pricingHelper_1 = require("../helpers/pricingHelper");
 const groupHelper_1 = require("../helpers/groupHelper");
 const stateHelper_1 = require("../helpers/stateHelper");
@@ -61,8 +61,8 @@ class EnergyFlowCard extends HTMLElement {
         this.historyBundleInFlight = undefined;
         this.historyBundleFetchedAt = 0;
         this.cancelHistoryPreload();
-        this.todayExportRevenue = undefined;
-        this.todayExportRevenueInFlight = undefined;
+        this.todayGridBalance = undefined;
+        this.todayGridBalanceInFlight = undefined;
         this.buildStructure();
         this.syncTimer();
         this.update();
@@ -72,7 +72,7 @@ class EnergyFlowCard extends HTMLElement {
         if (!this.config?.demo) {
             this.update();
             this.scheduleHistoryPreload();
-            void this.ensureTodayExportRevenue();
+            void this.ensureTodayGridBalance();
         }
     }
     get hass() {
@@ -100,7 +100,7 @@ class EnergyFlowCard extends HTMLElement {
         if (this.config) {
             this.update();
             this.scheduleHistoryPreload();
-            void this.ensureTodayExportRevenue();
+            void this.ensureTodayGridBalance();
         }
     }
     disconnectedCallback() {
@@ -287,7 +287,7 @@ class EnergyFlowCard extends HTMLElement {
         this.popup.open(model, this.nodeEls.get(nodeId)?.el);
         void this.ensureHistory(nodeId);
         if (this.config?.nodes.find((n) => n.id === nodeId)?.type === 'grid')
-            void this.ensureTodayExportRevenue();
+            void this.ensureTodayGridBalance();
     }
     closePopup() {
         if (this.popup.isOpen)
@@ -337,6 +337,11 @@ class EnergyFlowCard extends HTMLElement {
                 if (typeof id === 'string' && id)
                     rows.push({ label: (0, i18n_1.t)((0, Node_1.fieldLabelKey)(field, node.type), lang), value: this.formatEntity(id) });
             }
+            if (node.type === 'grid' && !node.config.phase_l1_power_entity) {
+                const l1 = this.derivedLiveL1(node, reading.watts);
+                if (l1 !== null)
+                    rows.push({ label: (0, i18n_1.t)('phase_l1_power_calculated', lang), value: `${l1 < 0 ? '−' : ''}${(0, stateHelper_1.formatPower)(l1, cfg.powerFormat)}` });
+            }
             for (const extra of node.config.entities ?? []) {
                 const friendly = this._hass?.states[extra.entity]?.attributes.friendly_name;
                 const label = extra.name ?? (typeof friendly === 'string' ? friendly : extra.entity);
@@ -356,8 +361,8 @@ class EnergyFlowCard extends HTMLElement {
                     value: `${(0, pricingHelper_1.formatCurrency)(rate.value, cfg.pricing.currency, lang, 3)} ${(0, i18n_1.t)('per_hour', lang)}`,
                 });
             }
-            if (this.todayExportRevenue?.value !== null && this.todayExportRevenue?.value !== undefined) {
-                rows.push({ label: (0, i18n_1.t)('revenue_today', lang), value: (0, pricingHelper_1.formatCurrency)(this.todayExportRevenue.value, cfg.pricing.currency, lang, 2) });
+            if (this.todayGridBalance?.value !== null && this.todayGridBalance?.value !== undefined) {
+                rows.push({ label: (0, i18n_1.t)('revenue_today', lang), value: (0, pricingHelper_1.formatCurrency)(this.todayGridBalance.value, cfg.pricing.currency, lang, 2) });
             }
         }
         const powerEntity = node.config.power_entity ?? node.config.production_entity;
@@ -385,6 +390,28 @@ class EnergyFlowCard extends HTMLElement {
             language: lang,
         };
     }
+    derivedL1Key(node) {
+        return `__derived_l1__${node.id}`;
+    }
+    /** Live L1 fallback for meters (notably HomeWizard P1) that expose total + L2 + L3 only. */
+    derivedLiveL1(node, totalWatts) {
+        if (node.type !== 'grid' || node.config.phase_l1_power_entity)
+            return null;
+        const l2Id = node.config.phase_l2_power_entity;
+        const l3Id = node.config.phase_l3_power_entity;
+        if (!l2Id || !l3Id || !this._hass)
+            return null;
+        const read = (id) => {
+            const entity = this._hass?.states[id];
+            if (!entity || entity.state === 'unknown' || entity.state === 'unavailable')
+                return null;
+            const value = (0, stateHelper_1.parsePower)(entity.state, entity.attributes?.unit_of_measurement);
+            if (value === null)
+                return null;
+            return node.invert ? -value : value;
+        };
+        return (0, phaseHelper_1.deriveL1Power)(totalWatts, read(l2Id), read(l3Id));
+    }
     phasePopupModel(node, totalHistory) {
         const cfg = this.config;
         if (!cfg || node.type !== 'grid')
@@ -402,11 +429,14 @@ class EnergyFlowCard extends HTMLElement {
         const demoSeries = cfg.demo && totalHistory.kind === 'ready'
             ? this.demoPhaseHistory(totalHistory)
             : undefined;
-        const series = labels.map((label, index) => ({
-            label,
-            cssClass: classes[index],
-            history: demoSeries?.[index] ?? (ids[index] ? (this.phaseHistory.get(ids[index]) ?? { kind: 'loading' }) : { kind: 'none' }),
-        }));
+        const series = labels.map((label, index) => {
+            const key = ids[index] ?? (index === 0 && ids[1] && ids[2] ? this.derivedL1Key(node) : undefined);
+            return {
+                label,
+                cssClass: classes[index],
+                history: demoSeries?.[index] ?? (key ? (this.phaseHistory.get(key) ?? { kind: 'loading' }) : { kind: 'none' }),
+            };
+        });
         return {
             enabled: this.phaseGraphEnabled.has(node.id),
             series,
@@ -434,32 +464,37 @@ class EnergyFlowCard extends HTMLElement {
             })),
         }));
     }
-    async ensureTodayExportRevenue() {
+    async ensureTodayGridBalance() {
         const cfg = this.config;
         if (!cfg || cfg.pricing.mode === 'none')
             return;
-        if (this.todayExportRevenue && Date.now() - this.todayExportRevenue.fetchedAt < HISTORY_TTL_MS)
+        if (this.todayGridBalance && Date.now() - this.todayGridBalance.fetchedAt < HISTORY_TTL_MS)
             return;
-        if (this.todayExportRevenueInFlight)
-            return this.todayExportRevenueInFlight;
+        if (this.todayGridBalanceInFlight)
+            return this.todayGridBalanceInFlight;
         const grid = cfg.nodes.find((n) => n.type === 'grid');
         if (!grid)
             return;
+        const importEnergyEntity = grid.config.energy_import_entity;
         const exportEnergyEntity = grid.config.energy_export_entity;
-        if (!cfg.demo && !exportEnergyEntity)
+        if (!cfg.demo && !importEnergyEntity && !exportEnergyEntity)
             return;
         const task = (async () => {
-            const value = cfg.demo ? 1.24 : this._hass && exportEnergyEntity ? await (0, pricingHelper_1.fetchTodayExportRevenue)(this._hass, exportEnergyEntity, cfg.pricing) : null;
-            this.todayExportRevenue = { value, fetchedAt: Date.now() };
+            const result = cfg.demo
+                ? { balance: -2.18 }
+                : this._hass
+                    ? await (0, pricingHelper_1.fetchTodayGridFinancials)(this._hass, importEnergyEntity, exportEnergyEntity, cfg.pricing)
+                    : null;
+            this.todayGridBalance = { value: result?.balance ?? null, fetchedAt: Date.now() };
             this.refreshOpenPopup(grid.id);
         })();
-        this.todayExportRevenueInFlight = task;
+        this.todayGridBalanceInFlight = task;
         try {
             await task;
         }
         finally {
-            if (this.todayExportRevenueInFlight === task)
-                this.todayExportRevenueInFlight = undefined;
+            if (this.todayGridBalanceInFlight === task)
+                this.todayGridBalanceInFlight = undefined;
         }
     }
     async ensureHistory(nodeId) {
@@ -600,6 +635,20 @@ class EnergyFlowCard extends HTMLElement {
                 const points = perNode.get(node.id) ?? [];
                 this.storeHistory(node, points.length >= 2 ? { kind: 'ready', points, start, end } : { kind: 'none' }, fetchedAt);
             }
+            // Sommige meters (o.a. HomeWizard P1) publiceren totaal + L2 + L3, maar geen losse L1.
+            // Leid L1 dan historisch af als totaal − L2 − L3, zodat de driefasegrafiek toch compleet is.
+            if (grid && !grid.config.phase_l1_power_entity && grid.config.phase_l2_power_entity && grid.config.phase_l3_power_entity) {
+                const total = this.history.get(grid.id)?.state;
+                const l2 = this.phaseHistory.get(grid.config.phase_l2_power_entity);
+                const l3 = this.phaseHistory.get(grid.config.phase_l3_power_entity);
+                if (total?.kind === 'ready' && l2?.kind === 'ready' && l3?.kind === 'ready') {
+                    const points = (0, phaseHelper_1.deriveL1History)(total.points, l2.points, l3.points);
+                    this.phaseHistory.set(this.derivedL1Key(grid), points.length >= 2 ? { kind: 'ready', points, start, end } : { kind: 'none' });
+                }
+                else {
+                    this.phaseHistory.set(this.derivedL1Key(grid), { kind: 'none' });
+                }
+            }
             this.historyBundleFetchedAt = fetchedAt;
         }
         catch {
@@ -613,6 +662,8 @@ class EnergyFlowCard extends HTMLElement {
                     if (id)
                         this.phaseHistory.set(id, { kind: 'none' });
                 }
+            if (grid && !grid.config.phase_l1_power_entity && grid.config.phase_l2_power_entity && grid.config.phase_l3_power_entity)
+                this.phaseHistory.set(this.derivedL1Key(grid), { kind: 'none' });
             this.historyBundleFetchedAt = fetchedAt;
             if (grid)
                 this.refreshOpenPopup(grid.id);
@@ -761,8 +812,8 @@ function labelPositionFor(node, y, homeY, straight) {
     return y < homeY - 1 ? 'above' : 'below';
 }
 
-},
-"src/card/styles.ts":function(require,module,exports){
+};
+__mods["src/card/styles.js"]=function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.styles = void 0;
@@ -924,6 +975,17 @@ ha-card.fallback {
 .graph .area { fill: var(--c); opacity: 0.14; }
 .graph .zero { stroke: var(--divider-color, #cfcfcf); stroke-dasharray: 3 3; }
 .graph .axis { fill: var(--secondary-text-color, #727272); font-size: 10.5px; }
+.interactive-graph { touch-action: pan-y; cursor: crosshair; }
+.inspect-hit { pointer-events: all; cursor: crosshair; outline: none; }
+.inspect-marker { stroke: var(--primary-text-color, #fff); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.7; pointer-events: none; }
+.inspect-dot { fill: var(--c); stroke: var(--card-background-color, #111); stroke-width: 1.5; pointer-events: none; }
+.inspect-dot.phase-1 { fill: var(--efc-phase-l1, #42a5f5); }
+.inspect-dot.phase-2 { fill: var(--efc-phase-l2, #ffb300); }
+.inspect-dot.phase-3 { fill: var(--efc-phase-l3, #ab47bc); }
+.inspect-tooltip { pointer-events: none; }
+.inspect-tooltip rect { fill: color-mix(in srgb, var(--card-background-color, #111) 94%, var(--primary-text-color, #fff) 6%); stroke: var(--divider-color, #555); stroke-width: 0.8; }
+.inspect-text { fill: var(--primary-text-color, #fff); font-size: 9px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.inspect-time { fill: var(--secondary-text-color, #aaa); font-weight: 500; }
 .phase-trace { stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .phase-l1 { --phase-c: var(--efc-phase-l1, #42a5f5); }
 .phase-l2 { --phase-c: var(--efc-phase-l2, #ffb300); }
@@ -953,8 +1015,8 @@ ha-card.fallback {
 }
 `;
 
-},
-"src/config/CardConfig.ts":function(require,module,exports){
+};
+__mods["src/config/CardConfig.js"]=function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ConfigError = void 0;
@@ -1246,8 +1308,8 @@ function parseLayout(raw) {
     return { mode, positions };
 }
 
-},
-"src/demo/DemoEngine.ts":function(require,module,exports){
+};
+__mods["src/demo/DemoEngine.js"]=function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.demoReadings = demoReadings;
@@ -1351,8 +1413,8 @@ function demoReadings(nodes, t) {
     return out;
 }
 
-},
-"src/editor/EnergyFlowCardEditor.ts":function(require,module,exports){
+};
+__mods["src/editor/EnergyFlowCardEditor.js"]=function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EnergyFlowCardEditor = void 0;
@@ -1642,6 +1704,8 @@ class EnergyFlowCardEditor extends HTMLElement {
         for (const key of (0, Node_1.advancedFieldsFor)(type)) {
             const input = this.entityInput(node[key], POWER_FIELDS.has(key), (v) => this.setOrDelete(node, key, v));
             advanced.append(this.field((0, i18n_1.t)((0, Node_1.fieldLabelKey)(key, type), lang), input));
+            if (type === 'grid' && key === 'phase_l1_power_entity')
+                advanced.append((0, dom_1.html)('p', { class: 'hint phase-hint' }, (0, i18n_1.t)('phase_l1_auto_hint', lang)));
         }
         advanced.append(this.iconPicker(node.icon, (value) => {
             if (value)
@@ -2096,8 +2160,8 @@ class EnergyFlowCardEditor extends HTMLElement {
 }
 exports.EnergyFlowCardEditor = EnergyFlowCardEditor;
 
-},
-"src/helpers/flowHelper.ts":function(require,module,exports){
+};
+__mods["src/helpers/flowHelper.js"]=function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.flowToHome = flowToHome;
@@ -2320,8 +2384,8 @@ function applyBackupReadings(nodes, connections, readings, demo) {
     }
 }
 
-},
-"src/helpers/groupHelper.ts":function(require,module,exports){
+};
+__mods["src/helpers/groupHelper.js"]=function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.groupedGroups = groupedGroups;
@@ -2393,8 +2457,8 @@ function applyGroupReadings(groups, groupNodes, readings) {
     }
 }
 
-},
-"src/helpers/historyHelper.ts":function(require,module,exports){
+};
+__mods["src/helpers/historyHelper.js"]=function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.fetchHistoryBatch = fetchHistoryBatch;
@@ -2481,8 +2545,8 @@ function unitFactor(unit) {
     return 1;
 }
 
-},
-"src/helpers/i18n.ts":function(require,module,exports){
+};
+__mods["src/helpers/i18n.js"]=function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.t = t;
@@ -2529,6 +2593,8 @@ const nl = {
     charge_power: "Laadvermogen",
     discharge_power: "Ontlaadvermogen",
     phase_l1_power: "L1 vermogen",
+    phase_l1_power_calculated: "L1 vermogen (berekend)",
+    phase_l1_auto_hint: "Laat L1 leeg als je meter alleen totaal, L2 en L3 levert; L1 wordt dan automatisch berekend.",
     phase_l2_power: "L2 vermogen",
     phase_l3_power: "L3 vermogen",
     phase_l1_voltage: "L1 spanning",
@@ -2539,6 +2605,8 @@ const nl = {
     phase_l3_current: "L3 stroom",
     show_phases: "Toon fasen",
     phase_graph_hint: "Toon L1, L2 en L3 in de grafiek",
+    inspect_graph: "Bekijk vermogen op een tijdstip",
+    total_power: "Totaal",
     demo_badge: "Demo",
     empty_title: "Nog geen apparaten",
     empty_hint: "Voeg nodes toe in de configuratie, of zet demo: true aan om de kaart te proberen.",
@@ -2676,6 +2744,8 @@ const en = {
     charge_power: "Charge power",
     discharge_power: "Discharge power",
     phase_l1_power: "L1 power",
+    phase_l1_power_calculated: "L1 power (calculated)",
+    phase_l1_auto_hint: "Leave L1 empty if your meter only provides total, L2 and L3; L1 will then be calculated automatically.",
     phase_l2_power: "L2 power",
     phase_l3_power: "L3 power",
     phase_l1_voltage: "L1 voltage",
@@ -2686,6 +2756,8 @@ const en = {
     phase_l3_current: "L3 current",
     show_phases: "Show phases",
     phase_graph_hint: "Show L1, L2 and L3 in the graph",
+    inspect_graph: "Inspect power at a point in time",
+    total_power: "Total",
     demo_badge: "Demo",
     empty_title: "No devices yet",
     empty_hint: "Add nodes to the configuration, or set demo: true to try the card.",
@@ -2795,14 +2867,49 @@ function hassLanguage(hass) {
     return hass?.locale?.language ?? hass?.language;
 }
 
-},
-"src/helpers/pricingHelper.ts":function(require,module,exports){
+};
+__mods["src/helpers/phaseHelper.js"]=function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.deriveL1Power = deriveL1Power;
+exports.deriveL1History = deriveL1History;
+/**
+ * HomeWizard/P1 setups may expose total grid power plus L2 and L3, without a separate L1 entity.
+ * In that case L1 is exactly the remainder of the measured total.
+ */
+function deriveL1Power(total, l2, l3) {
+    if (total === null || l2 === null || l3 === null)
+        return null;
+    if (![total, l2, l3].every(Number.isFinite))
+        return null;
+    return total - l2 - l3;
+}
+/** Derives an L1 history series from aligned total/L2/L3 history buckets. */
+function deriveL1History(total, l2, l3) {
+    const l2ByTime = new Map(l2.map((point) => [point.t, point.v]));
+    const l3ByTime = new Map(l3.map((point) => [point.t, point.v]));
+    const result = [];
+    for (const point of total) {
+        const p2 = l2ByTime.get(point.t);
+        const p3 = l3ByTime.get(point.t);
+        if (p2 === undefined || p3 === undefined)
+            continue;
+        const value = deriveL1Power(point.v, p2, p3);
+        if (value !== null)
+            result.push({ t: point.t, v: value });
+    }
+    return result;
+}
+
+};
+__mods["src/helpers/pricingHelper.js"]=function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.readPrices = readPrices;
 exports.currentGridRate = currentGridRate;
 exports.formatCurrency = formatCurrency;
 exports.formatPrice = formatPrice;
+exports.fetchTodayGridFinancials = fetchTodayGridFinancials;
 exports.fetchTodayExportRevenue = fetchTodayExportRevenue;
 function parsePriceState(state, unit) {
     const value = Number(String(state).replace(',', '.'));
@@ -2861,94 +2968,135 @@ function energyToKWh(value, unit) {
         return value * 1000;
     return value;
 }
-/** Estimate today's feed-in revenue from the configured cumulative export-energy sensor.
- * For price entities, historic price changes are used when available.
+function rawHistoryMap(response, ids) {
+    const byId = new Map();
+    for (let i = 0; i < (response ?? []).length; i++) {
+        const arr = response?.[i] ?? [];
+        const id = arr.find((x) => x.entity_id)?.entity_id ?? ids[i];
+        if (id)
+            byId.set(id, arr);
+    }
+    return byId;
+}
+function cumulativeEnergyPoints(states, currentState, now) {
+    if (!currentState)
+        return [];
+    const unit = currentState.attributes?.unit_of_measurement;
+    const points = [];
+    for (const s of states) {
+        const n = Number(String(s.state).replace(',', '.'));
+        const stamp = s.last_changed ?? s.last_updated;
+        if (!Number.isFinite(n) || !stamp)
+            continue;
+        points.push({ t: Date.parse(stamp), v: energyToKWh(n, unit) });
+    }
+    const current = Number(String(currentState.state).replace(',', '.'));
+    if (Number.isFinite(current))
+        points.push({ t: now, v: energyToKWh(current, unit) });
+    points.sort((a, b) => a.t - b.t);
+    return points;
+}
+function historicPricePoints(states, currentState) {
+    const unit = currentState?.attributes?.unit_of_measurement;
+    const points = [];
+    for (const s of states) {
+        const value = parsePriceState(s.state, unit);
+        const stamp = s.last_changed ?? s.last_updated;
+        if (value === null || !stamp)
+            continue;
+        points.push({ t: Date.parse(stamp), v: value });
+    }
+    points.sort((a, b) => a.t - b.t);
+    return points;
+}
+function integrateCumulativeEnergy(energyPoints, fallbackPrice, pricePoints) {
+    if (energyPoints.length < 2)
+        return 0;
+    const priceAt = (time) => {
+        let value = fallbackPrice;
+        for (const point of pricePoints) {
+            if (point.t > time)
+                break;
+            value = point.v;
+        }
+        return value;
+    };
+    let total = 0;
+    for (let i = 1; i < energyPoints.length; i++) {
+        const previous = energyPoints[i - 1];
+        const current = energyPoints[i];
+        let delta = current.v - previous.v;
+        if (delta < 0)
+            delta = current.v; // total_increasing reset
+        if (delta <= 0)
+            continue;
+        total += delta * priceAt(current.t);
+    }
+    return total;
+}
+/**
+ * Calculate today's signed grid financial balance from cumulative import/export energy.
+ * Positive = net feed-in revenue. Negative = net import cost.
  */
-async function fetchTodayExportRevenue(hass, exportEnergyEntity, pricing, now = Date.now()) {
+async function fetchTodayGridFinancials(hass, importEnergyEntity, exportEnergyEntity, pricing, now = Date.now()) {
     if (!hass.callApi || pricing.mode === 'none')
         return null;
-    const energyState = hass.states[exportEnergyEntity];
-    if (!energyState || energyState.state === 'unknown' || energyState.state === 'unavailable')
+    const importState = importEnergyEntity ? hass.states[importEnergyEntity] : undefined;
+    const exportState = exportEnergyEntity ? hass.states[exportEnergyEntity] : undefined;
+    if (!importState && !exportState)
         return null;
     const startDate = new Date(now);
     startDate.setHours(0, 0, 0, 0);
     const start = startDate.getTime();
-    const ids = [exportEnergyEntity];
-    if (pricing.mode === 'entities' && pricing.exportPriceEntity)
-        ids.push(pricing.exportPriceEntity);
+    const ids = [];
+    if (importEnergyEntity)
+        ids.push(importEnergyEntity);
+    if (exportEnergyEntity && exportEnergyEntity !== importEnergyEntity)
+        ids.push(exportEnergyEntity);
+    if (pricing.mode === 'entities') {
+        if (pricing.importPriceEntity && !ids.includes(pricing.importPriceEntity))
+            ids.push(pricing.importPriceEntity);
+        if (pricing.exportPriceEntity && !ids.includes(pricing.exportPriceEntity))
+            ids.push(pricing.exportPriceEntity);
+    }
+    if (ids.length === 0)
+        return null;
     const path = `history/period/${new Date(start).toISOString()}?filter_entity_id=${encodeURIComponent(ids.join(','))}` +
         `&end_time=${encodeURIComponent(new Date(now).toISOString())}&minimal_response&no_attributes&significant_changes_only`;
     try {
         const response = await hass.callApi('GET', path);
-        const byId = new Map();
-        for (let i = 0; i < (response ?? []).length; i++) {
-            const arr = response?.[i] ?? [];
-            const id = arr.find((x) => x.entity_id)?.entity_id ?? ids[i];
-            if (id)
-                byId.set(id, arr);
-        }
-        const energyUnit = energyState.attributes?.unit_of_measurement;
-        const energyPoints = [];
-        for (const s of byId.get(exportEnergyEntity) ?? []) {
-            const n = Number(String(s.state).replace(',', '.'));
-            const stamp = s.last_changed ?? s.last_updated;
-            if (!Number.isFinite(n) || !stamp)
-                continue;
-            energyPoints.push({ t: Date.parse(stamp), v: energyToKWh(n, energyUnit) });
-        }
-        const currentEnergy = Number(String(energyState.state).replace(',', '.'));
-        if (Number.isFinite(currentEnergy))
-            energyPoints.push({ t: now, v: energyToKWh(currentEnergy, energyUnit) });
-        energyPoints.sort((a, b) => a.t - b.t);
-        if (energyPoints.length < 2)
+        const byId = rawHistoryMap(response, ids);
+        const currentPrices = readPrices(pricing, hass);
+        const importPrice = currentPrices.importPrice;
+        const exportPrice = currentPrices.exportPrice;
+        const importPricePoints = pricing.mode === 'entities' && pricing.importPriceEntity
+            ? historicPricePoints(byId.get(pricing.importPriceEntity) ?? [], hass.states[pricing.importPriceEntity])
+            : [];
+        const exportPricePoints = pricing.mode === 'entities' && pricing.exportPriceEntity
+            ? historicPricePoints(byId.get(pricing.exportPriceEntity) ?? [], hass.states[pricing.exportPriceEntity])
+            : [];
+        const importCost = importEnergyEntity && importState && importPrice !== null
+            ? integrateCumulativeEnergy(cumulativeEnergyPoints(byId.get(importEnergyEntity) ?? [], importState, now), importPrice, importPricePoints)
+            : 0;
+        const exportRevenue = exportEnergyEntity && exportState && exportPrice !== null
+            ? integrateCumulativeEnergy(cumulativeEnergyPoints(byId.get(exportEnergyEntity) ?? [], exportState, now), exportPrice, exportPricePoints)
+            : 0;
+        if ((importEnergyEntity && importPrice === null) || (exportEnergyEntity && exportPrice === null))
             return null;
-        const fixedPrice = pricing.mode === 'fixed' ? pricing.exportPrice ?? null : null;
-        const currentPrice = pricing.mode === 'entities' ? entityPrice(hass, pricing.exportPriceEntity) : fixedPrice;
-        if (currentPrice === null)
-            return null;
-        const pricePoints = [];
-        if (pricing.mode === 'entities' && pricing.exportPriceEntity) {
-            const unit = hass.states[pricing.exportPriceEntity]?.attributes?.unit_of_measurement;
-            for (const s of byId.get(pricing.exportPriceEntity) ?? []) {
-                const v = parsePriceState(s.state, unit);
-                const stamp = s.last_changed ?? s.last_updated;
-                if (v === null || !stamp)
-                    continue;
-                pricePoints.push({ t: Date.parse(stamp), v });
-            }
-            pricePoints.sort((a, b) => a.t - b.t);
-        }
-        const priceAt = (t) => {
-            if (fixedPrice !== null)
-                return fixedPrice;
-            let found = currentPrice;
-            for (const p of pricePoints) {
-                if (p.t > t)
-                    break;
-                found = p.v;
-            }
-            return found;
-        };
-        let revenue = 0;
-        for (let i = 1; i < energyPoints.length; i++) {
-            const prev = energyPoints[i - 1];
-            const cur = energyPoints[i];
-            let delta = cur.v - prev.v;
-            if (delta < 0)
-                delta = cur.v; // total_increasing reset
-            if (delta <= 0)
-                continue;
-            revenue += delta * priceAt(cur.t);
-        }
-        return revenue;
+        return { importCost, exportRevenue, balance: exportRevenue - importCost };
     }
     catch {
         return null;
     }
 }
+/** Backwards-compatible helper: feed-in revenue only. */
+async function fetchTodayExportRevenue(hass, exportEnergyEntity, pricing, now = Date.now()) {
+    const result = await fetchTodayGridFinancials(hass, undefined, exportEnergyEntity, pricing, now);
+    return result?.exportRevenue ?? null;
+}
 
-},
-"src/helpers/stateHelper.ts":function(require,module,exports){
+};
+__mods["src/helpers/stateHelper.js"]=function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.parsePower = parsePower;
@@ -3040,8 +3188,8 @@ function round(value, decimals) {
     return String(Math.round(value * factor) / factor);
 }
 
-},
-"src/index.ts":function(require,module,exports){
+};
+__mods["src/index.js"]=function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const EnergyFlowCard_1 = require("./card/EnergyFlowCard");
@@ -3059,10 +3207,10 @@ if (!window.customCards.some((c) => c.type === 'energy-flow-card')) {
         preview: true,
     });
 }
-console.info('%c ENERGY-FLOW-CARD-PRO %c 0.10.0 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
+console.info('%c ENERGY-FLOW-CARD-PRO %c 0.10.2 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
 
-},
-"src/layout/AutoLayout.ts":function(require,module,exports){
+};
+__mods["src/layout/AutoLayout.js"]=function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.STRAIGHT_ROW_GAP = exports.HOME_RADIUS = exports.NODE_RADIUS = void 0;
@@ -3487,8 +3635,8 @@ function straightLayout(nodes, auto, links) {
     return { width: Math.round(width), height: Math.round(height), positions };
 }
 
-},
-"src/models/Connection.ts":function(require,module,exports){
+};
+__mods["src/models/Connection.js"]=function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createConnection = createConnection;
@@ -3540,8 +3688,8 @@ function parentOf(node, nodes) {
     return parent?.type === 'backup' ? parent : undefined;
 }
 
-},
-"src/models/Node.ts":function(require,module,exports){
+};
+__mods["src/models/Node.js"]=function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createNode = createNode;
@@ -3636,8 +3784,8 @@ function fieldLabelKey(field, type) {
     return field.replace(/_entity$/, '');
 }
 
-},
-"src/renderer/ConnectionRenderer.ts":function(require,module,exports){
+};
+__mods["src/renderer/ConnectionRenderer.js"]=function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.computeGeometry = computeGeometry;
@@ -3820,8 +3968,8 @@ function createConnectionElement(conn, from, to, curved, color, orthogonal = fal
     return { el: g, update };
 }
 
-},
-"src/renderer/NodeRenderer.ts":function(require,module,exports){
+};
+__mods["src/renderer/NodeRenderer.js"]=function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.displayNameOf = displayNameOf;
@@ -3993,8 +4141,8 @@ labelPosition = 'below') {
     return { el: g, update };
 }
 
-},
-"src/renderer/PopupRenderer.ts":function(require,module,exports){
+};
+__mods["src/renderer/PopupRenderer.js"]=function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Popup = void 0;
@@ -4012,9 +4160,166 @@ function signed(watts, format) {
 function clock(ms, language) {
     return new Date(ms).toLocaleTimeString(language || undefined, { hour: '2-digit', minute: '2-digit' });
 }
+function nearestPoint(points, time) {
+    if (points.length === 0)
+        return undefined;
+    let best = points[0];
+    let distance = Math.abs(best.t - time);
+    for (let i = 1; i < points.length; i++) {
+        const candidate = points[i];
+        const next = Math.abs(candidate.t - time);
+        if (next < distance) {
+            best = candidate;
+            distance = next;
+        }
+    }
+    return best;
+}
+/**
+ * Maakt de SVG-grafiek inspecteerbaar. Met de muis volgt de marker de cursor; op touch/click
+ * blijft het gekozen tijdstip staan. Zo werkt dezelfde interactie op desktop, tablet en mobiel.
+ */
+function attachInspector(root, start, end, series, format, language) {
+    if (series.length === 0 || series.every((item) => item.points.length === 0))
+        return;
+    const marker = (0, dom_1.svg)('line', {
+        class: 'inspect-marker',
+        x1: PAD.l,
+        x2: PAD.l,
+        y1: PAD.t,
+        y2: H - PAD.b,
+        visibility: 'hidden',
+    });
+    const dots = series.map(() => (0, dom_1.svg)('circle', { class: 'inspect-dot', r: 3.2, visibility: 'hidden' }));
+    const tooltip = (0, dom_1.svg)('g', { class: 'inspect-tooltip', visibility: 'hidden' });
+    const tooltipRect = (0, dom_1.svg)('rect', { rx: 5, ry: 5 });
+    const tooltipTexts = Array.from({ length: series.length + 2 }, () => (0, dom_1.svg)('text', { class: 'inspect-text' }));
+    tooltip.append(tooltipRect, ...tooltipTexts);
+    const hit = (0, dom_1.svg)('rect', {
+        class: 'inspect-hit',
+        x: PAD.l,
+        y: PAD.t,
+        width: W - PAD.l - PAD.r,
+        height: H - PAD.t - PAD.b,
+        fill: 'transparent',
+        tabindex: 0,
+        role: 'button',
+        'aria-label': (0, i18n_1.t)('inspect_graph', language),
+    });
+    root.append(marker, ...dots, tooltip, hit);
+    let locked = false;
+    let lastX = PAD.l;
+    const xFor = (ms) => PAD.l + ((ms - start) / Math.max(1, end - start)) * (W - PAD.l - PAD.r);
+    const updateAt = (svgX) => {
+        lastX = Math.max(PAD.l, Math.min(W - PAD.r, svgX));
+        const time = start + ((lastX - PAD.l) / (W - PAD.l - PAD.r)) * (end - start);
+        const chosen = series.map((item) => nearestPoint(item.points, time));
+        const available = chosen.filter((point) => !!point);
+        if (available.length === 0)
+            return;
+        const anchor = available[0];
+        const markerX = xFor(anchor.t);
+        marker.setAttribute('x1', markerX.toFixed(1));
+        marker.setAttribute('x2', markerX.toFixed(1));
+        marker.setAttribute('visibility', 'visible');
+        const allValues = series.flatMap((item) => item.points.map((p) => p.v));
+        const maxV = Math.max(0, ...allValues);
+        const minV = Math.min(0, ...allValues);
+        const hi = maxV === minV ? minV + 1 : maxV;
+        const lo = minV;
+        const yFor = (v) => PAD.t + (1 - (v - lo) / (hi - lo)) * (H - PAD.t - PAD.b);
+        chosen.forEach((point, index) => {
+            const dot = dots[index];
+            if (!point) {
+                dot.setAttribute('visibility', 'hidden');
+                return;
+            }
+            dot.setAttribute('cx', xFor(point.t).toFixed(1));
+            dot.setAttribute('cy', yFor(point.v).toFixed(1));
+            dot.setAttribute('visibility', 'visible');
+            if (series.length > 1)
+                dot.setAttribute('class', `inspect-dot phase-${index + 1}`);
+        });
+        const lines = [clock(anchor.t, language)];
+        if (series.length === 1) {
+            lines.push(signed(anchor.v, format));
+        }
+        else {
+            let total = 0;
+            let totalCount = 0;
+            chosen.forEach((point, index) => {
+                if (!point)
+                    return;
+                lines.push(`${series[index]?.label ?? `L${index + 1}`}  ${signed(point.v, format)}`);
+                total += point.v;
+                totalCount++;
+            });
+            if (totalCount > 0)
+                lines.push(`${(0, i18n_1.t)('total_power', language)}  ${signed(total, format)}`);
+        }
+        const lineHeight = 13;
+        const boxW = series.length > 1 ? 118 : 92;
+        const boxH = 10 + lines.length * lineHeight;
+        const boxX = markerX > W * 0.62 ? markerX - boxW - 7 : markerX + 7;
+        const boxY = Math.max(3, PAD.t - 15);
+        tooltipRect.setAttribute('x', boxX.toFixed(1));
+        tooltipRect.setAttribute('y', boxY.toFixed(1));
+        tooltipRect.setAttribute('width', String(boxW));
+        tooltipRect.setAttribute('height', String(boxH));
+        tooltipTexts.forEach((text, index) => {
+            const line = lines[index];
+            if (line === undefined) {
+                text.setAttribute('visibility', 'hidden');
+                return;
+            }
+            text.textContent = line;
+            text.setAttribute('x', (boxX + 7).toFixed(1));
+            text.setAttribute('y', (boxY + 13 + index * lineHeight).toFixed(1));
+            text.setAttribute('visibility', 'visible');
+            text.setAttribute('class', index === 0 ? 'inspect-text inspect-time' : 'inspect-text');
+        });
+        tooltip.setAttribute('visibility', 'visible');
+        hit.setAttribute('aria-label', `${clock(anchor.t, language)}: ${lines.slice(1).join(', ')}`);
+    };
+    const svgXFromPointer = (ev) => {
+        const rect = root.getBoundingClientRect();
+        return ((ev.clientX - rect.left) / Math.max(1, rect.width)) * W;
+    };
+    const hide = () => {
+        marker.setAttribute('visibility', 'hidden');
+        dots.forEach((dot) => dot.setAttribute('visibility', 'hidden'));
+        tooltip.setAttribute('visibility', 'hidden');
+    };
+    hit.addEventListener('pointermove', (ev) => {
+        if (locked && ev.pointerType !== 'mouse')
+            return;
+        updateAt(svgXFromPointer(ev));
+    });
+    hit.addEventListener('pointerdown', (ev) => {
+        ev.preventDefault();
+        locked = true;
+        updateAt(svgXFromPointer(ev));
+    });
+    hit.addEventListener('pointerleave', () => {
+        if (!locked)
+            hide();
+    });
+    hit.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Escape') {
+            locked = false;
+            hide();
+            return;
+        }
+        if (ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight')
+            return;
+        ev.preventDefault();
+        locked = true;
+        updateAt(lastX + (ev.key === 'ArrowRight' ? 8 : -8));
+    });
+}
 /** Tekent de 24-uursgrafiek als kale SVG: geen externe grafiekbibliotheek nodig. */
 function buildGraph(points, start, end, format, language) {
-    const root = (0, dom_1.svg)('svg', { class: 'graph', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': (0, i18n_1.t)('last_24h', language) });
+    const root = (0, dom_1.svg)('svg', { class: 'graph interactive-graph', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': (0, i18n_1.t)('last_24h', language) });
     const values = points.map((p) => p.v);
     const maxV = Math.max(0, ...values);
     const minV = Math.min(0, ...values);
@@ -4031,6 +4336,7 @@ function buildGraph(points, start, end, format, language) {
     if (minV < 0) {
         root.append((0, dom_1.svg)('text', { class: 'axis', x: W - PAD.r, y: 12, 'text-anchor': 'end' }, `${(0, i18n_1.t)('minimum', language)} ${signed(minV, format)}`));
     }
+    attachInspector(root, start, end, [{ points }], format, language);
     return root;
 }
 /** Driefaseweergave: dezelfde tijdas en schaal voor L1/L2/L3, zodat de lijnen direct vergelijkbaar zijn. */
@@ -4050,7 +4356,7 @@ function buildPhaseGraph(series, format, language) {
     const x = (ms) => PAD.l + ((ms - start) / (end - start)) * (W - PAD.l - PAD.r);
     const y = (v) => PAD.t + (1 - (v - lo) / (hi - lo)) * (H - PAD.t - PAD.b);
     const y0 = y(0);
-    const root = (0, dom_1.svg)('svg', { class: 'graph phase-graph', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': `${(0, i18n_1.t)('last_24h', language)} L1 L2 L3` });
+    const root = (0, dom_1.svg)('svg', { class: 'graph phase-graph interactive-graph', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': `${(0, i18n_1.t)('last_24h', language)} L1 L2 L3` });
     root.append((0, dom_1.svg)('line', { class: 'zero', x1: PAD.l, x2: W - PAD.r, y1: y0.toFixed(1), y2: y0.toFixed(1) }), (0, dom_1.svg)('text', { class: 'axis', x: PAD.l, y: 12 }, `${(0, i18n_1.t)('maximum', language)} ${signed(maxV, format)}`), (0, dom_1.svg)('text', { class: 'axis', x: PAD.l, y: H - 5 }, clock(start, language)), (0, dom_1.svg)('text', { class: 'axis', x: W - PAD.r, y: H - 5, 'text-anchor': 'end' }, clock(end, language)));
     if (minV < 0)
         root.append((0, dom_1.svg)('text', { class: 'axis', x: W - PAD.r, y: 12, 'text-anchor': 'end' }, `${(0, i18n_1.t)('minimum', language)} ${signed(minV, format)}`));
@@ -4058,6 +4364,7 @@ function buildPhaseGraph(series, format, language) {
         const line = item.history.points.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(p.t).toFixed(1)} ${y(p.v).toFixed(1)}`).join(' ');
         root.append((0, dom_1.svg)('path', { class: `phase-trace ${item.cssClass}`, d: line, fill: 'none' }));
     }
+    attachInspector(root, start, end, ready.map((item) => ({ label: item.label, points: item.history.points })), format, language);
     const legend = (0, dom_1.html)('div', { class: 'phase-legend' });
     for (const item of series) {
         legend.append((0, dom_1.html)('span', { class: `phase-key ${item.cssClass}` }, (0, dom_1.html)('i', {}), item.label));
@@ -4153,8 +4460,8 @@ class Popup {
 }
 exports.Popup = Popup;
 
-},
-"src/renderer/dom.ts":function(require,module,exports){
+};
+__mods["src/renderer/dom.js"]=function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.svg = svg;
@@ -4192,8 +4499,8 @@ function setAttr(el, name, value) {
         el.setAttribute(name, value);
 }
 
-},
-"src/types/EntityStatus.ts":function(require,module,exports){
+};
+__mods["src/types/EntityStatus.js"]=function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EntityStatus = void 0;
@@ -4232,8 +4539,8 @@ function hasValue(status) {
     return status === EntityStatus.Valid || status === EntityStatus.Zero || status === EntityStatus.Charging;
 }
 
-},
-"src/types/NodeType.ts":function(require,module,exports){
+};
+__mods["src/types/NodeType.js"]=function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TYPES_WITH_DEFAULT_ICON = exports.NODE_TYPES = void 0;
@@ -4297,31 +4604,15 @@ function roleOf(type) {
 /** Home, Grid, PV en Battery krijgen standaard een icoon; bij andere apparaten is het optioneel. */
 exports.TYPES_WITH_DEFAULT_ICON = new Set(['home', 'grid', 'solar', 'battery', 'backup']);
 
-},
-"src/types/hass.ts":function(require,module,exports){
+};
+__mods["src/types/hass.js"]=function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 
-},
 };
-const __cache={};
-function __norm(parts){const out=[];for(const p of parts){if(!p||p==='.')continue;if(p==='..')out.pop();else out.push(p);}return out.join('/');}
-function __resolve(spec,base){
-  if(!spec.startsWith('.')) return spec;
-  const dir=base.split('/').slice(0,-1);
-  const raw=__norm(dir.concat(spec.split('/')));
-  const candidates=[raw,raw+'.ts',raw+'/index.ts'];
-  for(const c of candidates) if(__modules[c]) return c;
-  throw new Error('Cannot resolve '+spec+' from '+base);
-}
-function __require(spec,base=''){
-  const id=base?__resolve(spec,base):spec;
-  if(!__modules[id]) throw new Error('External module not bundled: '+id);
-  if(__cache[id]) return __cache[id].exports;
-  const module={exports:{}}; __cache[id]=module;
-  const localRequire=(s)=>__require(s,id);
-  __modules[id](localRequire,module,module.exports);
-  return module.exports;
-}
-__require('src/index.ts');
+
+function __norm(parts){const o=[];for(const p of parts){if(!p||p==='.')continue;if(p==='..')o.pop();else o.push(p);}return o.join('/');}
+function __resolve(from,req){if(!req.startsWith('.'))return req;const base=from.split('/');base.pop();let id=__norm(base.concat(req.split('/')));if(!/\.js$/.test(id))id+='.js';return id;}
+function __req(id,from='src/index.js'){const rid=__resolve(from,id);if(__cache[rid])return __cache[rid].exports;const fn=__mods[rid];if(!fn)throw new Error('Module not found: '+rid+' from '+from);const module={exports:{}};__cache[rid]=module;fn((x)=>__req(x,rid),module,module.exports);return module.exports;}
+__req('src/index.js','');
 })();

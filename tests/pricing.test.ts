@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { currentGridRate, fetchTodayExportRevenue, formatPrice, readPrices } from '../src/helpers/pricingHelper';
+import { currentGridRate, fetchTodayExportRevenue, fetchTodayGridFinancials, formatPrice, readPrices } from '../src/helpers/pricingHelper';
 import type { Hass } from '../src/types/hass';
 
 test('fixed prices are read independently', () => {
@@ -35,4 +35,36 @@ test('today export revenue uses cumulative export delta and fixed export tariff'
   };
   const revenue = await fetchTodayExportRevenue(hass, 'sensor.export_energy', { mode: 'fixed', currency: 'EUR', exportPrice: 0.1 });
   assert.equal(revenue, 0.2);
+});
+
+
+test('today grid financials can be negative when import cost exceeds export revenue', async () => {
+  const now = Date.now();
+  const hass: Hass = {
+    states: {
+      'sensor.import_energy': { state: '12', attributes: { unit_of_measurement: 'kWh' } },
+      'sensor.export_energy': { state: '5', attributes: { unit_of_measurement: 'kWh' } },
+    },
+    callApi: async () => [
+      [
+        { entity_id: 'sensor.import_energy', state: '10', last_changed: new Date(now - 3600000).toISOString() },
+        { state: '12', last_changed: new Date(now).toISOString() },
+      ],
+      [
+        { entity_id: 'sensor.export_energy', state: '5', last_changed: new Date(now - 3600000).toISOString() },
+        { state: '5', last_changed: new Date(now).toISOString() },
+      ],
+    ],
+  };
+  const result = await fetchTodayGridFinancials(
+    hass,
+    'sensor.import_energy',
+    'sensor.export_energy',
+    { mode: 'fixed', currency: 'EUR', importPrice: 0.35, exportPrice: 0.1 },
+    now,
+  );
+  assert.ok(result);
+  assert.equal(result.importCost, 0.7);
+  assert.equal(result.exportRevenue, 0);
+  assert.equal(result.balance, -0.7);
 });

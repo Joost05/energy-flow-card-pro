@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.10.2
+
+- Made all 24-hour graphs interactive: hover on desktop or tap/drag on touch devices to inspect the power at a specific time.
+- Added a vertical graph marker and compact time/value tooltip.
+- The three-phase graph now shows L1, L2, L3 and the summed total at the selected time.
+- Tapped graph values remain pinned until another point is selected; keyboard left/right inspection is also supported.
+- Changed **Revenue today** to a signed daily grid financial result: export revenue minus import cost, so it can become negative when no or insufficient energy was exported.
+- Daily financial calculation supports both fixed tariffs and Home Assistant price entities.
+- Updated runtime/package version to **0.10.2**.
+
+## 0.10.1
+
+- Added automatic L1 power calculation for meters that expose total grid power plus L2 and L3 but no separate L1 entity (for example some HomeWizard P1 setups).
+- L1 is calculated as `total - L2 - L3` for both live values and the 24-hour phase graph.
+- Added a clear editor hint that L1 may be left empty when this fallback can be used.
+- The grid popup labels the fallback value as **L1 power (calculated)**.
+- Updated runtime/package version to **0.10.1**.
+
 ## 0.10.0
 
 - Added optional L1/L2/L3 power, voltage and current entities to Grid advanced configuration.

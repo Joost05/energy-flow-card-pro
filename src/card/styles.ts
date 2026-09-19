@@ -156,6 +156,17 @@ ha-card.fallback {
 .graph .area { fill: var(--c); opacity: 0.14; }
 .graph .zero { stroke: var(--divider-color, #cfcfcf); stroke-dasharray: 3 3; }
 .graph .axis { fill: var(--secondary-text-color, #727272); font-size: 10.5px; }
+.interactive-graph { touch-action: pan-y; cursor: crosshair; }
+.inspect-hit { pointer-events: all; cursor: crosshair; outline: none; }
+.inspect-marker { stroke: var(--primary-text-color, #fff); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.7; pointer-events: none; }
+.inspect-dot { fill: var(--c); stroke: var(--card-background-color, #111); stroke-width: 1.5; pointer-events: none; }
+.inspect-dot.phase-1 { fill: var(--efc-phase-l1, #42a5f5); }
+.inspect-dot.phase-2 { fill: var(--efc-phase-l2, #ffb300); }
+.inspect-dot.phase-3 { fill: var(--efc-phase-l3, #ab47bc); }
+.inspect-tooltip { pointer-events: none; }
+.inspect-tooltip rect { fill: color-mix(in srgb, var(--card-background-color, #111) 94%, var(--primary-text-color, #fff) 6%); stroke: var(--divider-color, #555); stroke-width: 0.8; }
+.inspect-text { fill: var(--primary-text-color, #fff); font-size: 9px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.inspect-time { fill: var(--secondary-text-color, #aaa); font-weight: 500; }
 .phase-trace { stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .phase-l1 { --phase-c: var(--efc-phase-l1, #42a5f5); }
 .phase-l2 { --phase-c: var(--efc-phase-l2, #ffb300); }

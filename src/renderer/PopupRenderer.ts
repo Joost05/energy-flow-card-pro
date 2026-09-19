@@ -53,6 +53,176 @@ function clock(ms: number, language?: string): string {
   return new Date(ms).toLocaleTimeString(language || undefined, { hour: '2-digit', minute: '2-digit' });
 }
 
+interface InspectorSeries {
+  label?: string;
+  points: readonly HistoryPoint[];
+}
+
+function nearestPoint(points: readonly HistoryPoint[], time: number): HistoryPoint | undefined {
+  if (points.length === 0) return undefined;
+  let best = points[0]!;
+  let distance = Math.abs(best.t - time);
+  for (let i = 1; i < points.length; i++) {
+    const candidate = points[i]!;
+    const next = Math.abs(candidate.t - time);
+    if (next < distance) {
+      best = candidate;
+      distance = next;
+    }
+  }
+  return best;
+}
+
+/**
+ * Maakt de SVG-grafiek inspecteerbaar. Met de muis volgt de marker de cursor; op touch/click
+ * blijft het gekozen tijdstip staan. Zo werkt dezelfde interactie op desktop, tablet en mobiel.
+ */
+function attachInspector(
+  root: SVGSVGElement,
+  start: number,
+  end: number,
+  series: readonly InspectorSeries[],
+  format: PowerFormat,
+  language?: string,
+): void {
+  if (series.length === 0 || series.every((item) => item.points.length === 0)) return;
+
+  const marker = svg('line', {
+    class: 'inspect-marker',
+    x1: PAD.l,
+    x2: PAD.l,
+    y1: PAD.t,
+    y2: H - PAD.b,
+    visibility: 'hidden',
+  });
+  const dots = series.map(() => svg('circle', { class: 'inspect-dot', r: 3.2, visibility: 'hidden' }));
+  const tooltip = svg('g', { class: 'inspect-tooltip', visibility: 'hidden' });
+  const tooltipRect = svg('rect', { rx: 5, ry: 5 });
+  const tooltipTexts = Array.from({ length: series.length + 2 }, () => svg('text', { class: 'inspect-text' }));
+  tooltip.append(tooltipRect, ...tooltipTexts);
+  const hit = svg('rect', {
+    class: 'inspect-hit',
+    x: PAD.l,
+    y: PAD.t,
+    width: W - PAD.l - PAD.r,
+    height: H - PAD.t - PAD.b,
+    fill: 'transparent',
+    tabindex: 0,
+    role: 'button',
+    'aria-label': t('inspect_graph', language),
+  });
+  root.append(marker, ...dots, tooltip, hit);
+
+  let locked = false;
+  let lastX = PAD.l;
+  const xFor = (ms: number) => PAD.l + ((ms - start) / Math.max(1, end - start)) * (W - PAD.l - PAD.r);
+
+  const updateAt = (svgX: number): void => {
+    lastX = Math.max(PAD.l, Math.min(W - PAD.r, svgX));
+    const time = start + ((lastX - PAD.l) / (W - PAD.l - PAD.r)) * (end - start);
+    const chosen = series.map((item) => nearestPoint(item.points, time));
+    const available = chosen.filter((point): point is HistoryPoint => !!point);
+    if (available.length === 0) return;
+    const anchor = available[0]!;
+    const markerX = xFor(anchor.t);
+    marker.setAttribute('x1', markerX.toFixed(1));
+    marker.setAttribute('x2', markerX.toFixed(1));
+    marker.setAttribute('visibility', 'visible');
+
+    const allValues = series.flatMap((item) => item.points.map((p) => p.v));
+    const maxV = Math.max(0, ...allValues);
+    const minV = Math.min(0, ...allValues);
+    const hi = maxV === minV ? minV + 1 : maxV;
+    const lo = minV;
+    const yFor = (v: number) => PAD.t + (1 - (v - lo) / (hi - lo)) * (H - PAD.t - PAD.b);
+
+    chosen.forEach((point, index) => {
+      const dot = dots[index]!;
+      if (!point) {
+        dot.setAttribute('visibility', 'hidden');
+        return;
+      }
+      dot.setAttribute('cx', xFor(point.t).toFixed(1));
+      dot.setAttribute('cy', yFor(point.v).toFixed(1));
+      dot.setAttribute('visibility', 'visible');
+      if (series.length > 1) dot.setAttribute('class', `inspect-dot phase-${index + 1}`);
+    });
+
+    const lines: string[] = [clock(anchor.t, language)];
+    if (series.length === 1) {
+      lines.push(signed(anchor.v, format));
+    } else {
+      let total = 0;
+      let totalCount = 0;
+      chosen.forEach((point, index) => {
+        if (!point) return;
+        lines.push(`${series[index]?.label ?? `L${index + 1}`}  ${signed(point.v, format)}`);
+        total += point.v;
+        totalCount++;
+      });
+      if (totalCount > 0) lines.push(`${t('total_power', language)}  ${signed(total, format)}`);
+    }
+
+    const lineHeight = 13;
+    const boxW = series.length > 1 ? 118 : 92;
+    const boxH = 10 + lines.length * lineHeight;
+    const boxX = markerX > W * 0.62 ? markerX - boxW - 7 : markerX + 7;
+    const boxY = Math.max(3, PAD.t - 15);
+    tooltipRect.setAttribute('x', boxX.toFixed(1));
+    tooltipRect.setAttribute('y', boxY.toFixed(1));
+    tooltipRect.setAttribute('width', String(boxW));
+    tooltipRect.setAttribute('height', String(boxH));
+    tooltipTexts.forEach((text, index) => {
+      const line = lines[index];
+      if (line === undefined) {
+        text.setAttribute('visibility', 'hidden');
+        return;
+      }
+      text.textContent = line;
+      text.setAttribute('x', (boxX + 7).toFixed(1));
+      text.setAttribute('y', (boxY + 13 + index * lineHeight).toFixed(1));
+      text.setAttribute('visibility', 'visible');
+      text.setAttribute('class', index === 0 ? 'inspect-text inspect-time' : 'inspect-text');
+    });
+    tooltip.setAttribute('visibility', 'visible');
+    hit.setAttribute('aria-label', `${clock(anchor.t, language)}: ${lines.slice(1).join(', ')}`);
+  };
+
+  const svgXFromPointer = (ev: PointerEvent): number => {
+    const rect = root.getBoundingClientRect();
+    return ((ev.clientX - rect.left) / Math.max(1, rect.width)) * W;
+  };
+  const hide = (): void => {
+    marker.setAttribute('visibility', 'hidden');
+    dots.forEach((dot) => dot.setAttribute('visibility', 'hidden'));
+    tooltip.setAttribute('visibility', 'hidden');
+  };
+
+  hit.addEventListener('pointermove', (ev) => {
+    if (locked && ev.pointerType !== 'mouse') return;
+    updateAt(svgXFromPointer(ev));
+  });
+  hit.addEventListener('pointerdown', (ev) => {
+    ev.preventDefault();
+    locked = true;
+    updateAt(svgXFromPointer(ev));
+  });
+  hit.addEventListener('pointerleave', () => {
+    if (!locked) hide();
+  });
+  hit.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape') {
+      locked = false;
+      hide();
+      return;
+    }
+    if (ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight') return;
+    ev.preventDefault();
+    locked = true;
+    updateAt(lastX + (ev.key === 'ArrowRight' ? 8 : -8));
+  });
+}
+
 /** Tekent de 24-uursgrafiek als kale SVG: geen externe grafiekbibliotheek nodig. */
 export function buildGraph(
   points: readonly HistoryPoint[],
@@ -61,7 +231,7 @@ export function buildGraph(
   format: PowerFormat,
   language?: string,
 ): SVGSVGElement {
-  const root = svg('svg', { class: 'graph', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': t('last_24h', language) });
+  const root = svg('svg', { class: 'graph interactive-graph', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': t('last_24h', language) });
 
   const values = points.map((p) => p.v);
   const maxV = Math.max(0, ...values);
@@ -89,6 +259,7 @@ export function buildGraph(
   if (minV < 0) {
     root.append(svg('text', { class: 'axis', x: W - PAD.r, y: 12, 'text-anchor': 'end' }, `${t('minimum', language)} ${signed(minV, format)}`));
   }
+  attachInspector(root, start, end, [{ points }], format, language);
   return root;
 }
 
@@ -114,7 +285,7 @@ export function buildPhaseGraph(
   const x = (ms: number) => PAD.l + ((ms - start) / (end - start)) * (W - PAD.l - PAD.r);
   const y = (v: number) => PAD.t + (1 - (v - lo) / (hi - lo)) * (H - PAD.t - PAD.b);
   const y0 = y(0);
-  const root = svg('svg', { class: 'graph phase-graph', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': `${t('last_24h', language)} L1 L2 L3` });
+  const root = svg('svg', { class: 'graph phase-graph interactive-graph', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': `${t('last_24h', language)} L1 L2 L3` });
   root.append(
     svg('line', { class: 'zero', x1: PAD.l, x2: W - PAD.r, y1: y0.toFixed(1), y2: y0.toFixed(1) }),
     svg('text', { class: 'axis', x: PAD.l, y: 12 }, `${t('maximum', language)} ${signed(maxV, format)}`),
@@ -127,6 +298,7 @@ export function buildPhaseGraph(
     const line = item.history.points.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(p.t).toFixed(1)} ${y(p.v).toFixed(1)}`).join(' ');
     root.append(svg('path', { class: `phase-trace ${item.cssClass}`, d: line, fill: 'none' }));
   }
+  attachInspector(root, start, end, ready.map((item) => ({ label: item.label, points: item.history.points })), format, language);
 
   const legend = html('div', { class: 'phase-legend' });
   for (const item of series) {

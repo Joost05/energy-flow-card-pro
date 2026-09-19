@@ -312,6 +312,7 @@ export class EnergyFlowCardEditor extends HTMLElement {
     for (const key of advancedFieldsFor(type)) {
       const input = this.entityInput(node[key] as string | undefined, POWER_FIELDS.has(key), (v) => this.setOrDelete(node, key, v));
       advanced.append(this.field(t(fieldLabelKey(key, type), lang), input));
+      if (type === 'grid' && key === 'phase_l1_power_entity') advanced.append(html('p', { class: 'hint phase-hint' }, t('phase_l1_auto_hint', lang)));
     }
     advanced.append(this.iconPicker(node.icon, (value) => {
       if (value) node.icon = value;

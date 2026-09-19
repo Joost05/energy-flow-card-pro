@@ -23,3 +23,8 @@ test('phase graph labels are translated', () => {
   assert.equal(t('phase_l1_power', 'nl'), 'L1 vermogen');
   assert.equal(t('phase_l1_power', 'en'), 'L1 power');
 });
+
+test('calculated L1 labels are translated', () => {
+  assert.equal(t('phase_l1_power_calculated', 'nl-NL'), 'L1 vermogen (berekend)');
+  assert.equal(t('phase_l1_power_calculated', 'en-GB'), 'L1 power (calculated)');
+});
