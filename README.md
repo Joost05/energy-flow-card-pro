@@ -1,271 +1,140 @@
 # Energy Flow Card Pro
 
-A custom Home Assistant Lovelace card for advanced live energy flows, device-level power, history, grouping and optional electricity pricing.
+Energy Flow Card Pro is a custom Home Assistant Lovelace card for **live energy flows, device-level power, historical replay, diagnostics, hierarchical consumer branches, three-phase Grid details and optional electricity pricing**.
 
-## Features
+It is designed to scale from a simple **Home / Grid / PV / Battery** overview to larger setups with **grouped devices, branch drill-down, replay and per-node history popups**.
 
-- Live animated energy flows
-- Flow, round and straight layouts
-- Adaptive Flow layout that sizes itself to the actual content
-- Automatic multi-row wrapping for larger installations
-- Compact backup-device grids
-- Hierarchical consumer branches (for example Desk smart plug → PC / TV / console / 3D printer)
-- Parent nodes show a descendant-count badge so hidden branch depth is visible at a glance
-- Mobile branch focus expands the complete subtree, rather than only one child level
-- Diagnostic warnings propagate up consumer branches so problems deeper in a tree remain visible from the main card
-- Optional device groups with summed live power or individual display
-- Group detail popups with member values and 24-hour history
-- Icon dropdown with common MDI presets plus a custom `mdi:` option
-- Optional Home power sensor or automatic Home calculation with reconstructed 24-hour history
-- Detail popup with interactive 24-hour graph, point-in-time inspection, peak power, peak time, average power and extra measurements
-- Background history preloading and caching for fast popup graphs
-- Home Assistant entity pickers in the visual editor
-- Dutch and English UI, following the active Home Assistant frontend language
-- Light and dark theme support through Home Assistant theme variables
-- Responsive layout for desktop, tablet and mobile
-- Optional electricity pricing with fixed import/export tariffs or Home Assistant price entities
-- Live grid cost/revenue rate plus signed **Revenue today** (export revenue minus import cost) in the Grid detail popup
-- Optional three-phase Grid detail: L1/L2/L3 power history in one graph, plus optional phase voltage/current measurements
-- Home popup with Today / This week / This month energy and cost statistics
-- Period import cost, feed-in revenue, net cost, self-consumption and self-sufficiency when enough energy counters are configured
-- Demo mode with example energy prices and period statistics for testing without sensors
+<p align="center">
+  <img src="docs/images/hero-desktop.png" alt="Energy Flow Card Pro desktop overview" width="900">
+</p>
 
-## Version history
+## Highlights
 
-- **0.18.0** — Makes deep consumer trees easier to understand: descendant-count badges, full subtree focus on mobile, and diagnostic warnings propagated to parent nodes.
-- **0.17.0** — Aligns the technical identifiers with the public name: `custom:energy-flow-card-pro` and `energy-flow-card-pro.js`. This is a one-time breaking rename before 1.0.
-- **0.16.0** — Adds mobile focus navigation for large hierarchies, reliable touch-drag graph inspection, and a more compact replay control.
+- Live animated energy-flow lines
+- Responsive desktop, tablet and mobile layout
+- 24-hour per-node history popups
+- Whole-card 24-hour replay
+- Hierarchical consumers (for example `Desk -> power strip -> PC / PS5 / TV`)
+- Warning badges and diagnostics that propagate up the branch tree
+- Optional groups with summed power and shared history
+- Optional Grid L1/L2/L3 graph with phase power, voltage and current support
+- Automatic calculated **L1** fallback for meters that expose total + L2 + L3 only
+- Optional pricing with fixed tariffs or Home Assistant price entities
+- Home energy/cost statistics for **today / this week / this month**
+- Demo mode for safe testing without sensors
+- Dutch and English UI following the Home Assistant frontend language
+- Curated color presets in the visual editor
 
-- **0.15.2** — Fixes the Live replay slider width and replaces free-form color picking with a curated preset palette.
-- **0.15.0** — Adds configurable energy-type colors, a compact replay scrubber with contextual Live button, and coalesced Home Assistant state rendering for larger dashboards.
-- **0.14.0** — Adds multi-level consumer branches with parent/child power flows, loop protection and hierarchy-aware layouts.
-- **0.13.0** — Adds Home energy/cost statistics for today, week and month, including import/export totals, net cost and self-consumption metrics.
-- **0.12.1** — Fixes Demo replay and preloads one synchronized history timeline for the complete card.
-- **0.12.0** — Historical replay of the complete card with a 24-hour scrubber and Live return.
+## Quick look
 
-### v0.11.0
+<table>
+  <tr>
+    <td align="center"><strong>Mobile overview</strong></td>
+    <td align="center"><strong>Hierarchy focus</strong></td>
+    <td align="center"><strong>Three-phase Grid popup</strong></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/overview-mobile.jpg" alt="Mobile overview" width="260"></td>
+    <td><img src="docs/images/hierarchy-mobile.jpg" alt="Hierarchy focus on mobile" width="260"></td>
+    <td><img src="docs/images/grid-popup-phases.jpg" alt="Grid popup with L1 L2 L3 graph" width="260"></td>
+  </tr>
+</table>
 
-- Added live diagnostics for sensor health, stale values and measurable energy-balance differences.
-- Added Home **Other / unmetered consumption** to show how much live load is not represented by configured consumer nodes.
-- Added small warning badges only for real diagnostic warnings/errors; informational values remain in the popup.
+## Installation
 
-### v0.10.2
+### HACS (recommended)
 
-- Added interactive inspection to every 24-hour graph: hover on desktop or tap/drag on touch devices to view the exact time and power.
-- The three-phase graph inspector shows L1, L2, L3 and the combined total for the selected time.
-- Tapped values remain pinned so they are easy to read on phones and tablets.
-- **Revenue today** is now a signed daily Grid result: export revenue minus import cost, so import-only days correctly show a negative amount.
+Energy Flow Card Pro can be installed as a **HACS custom Dashboard repository**.
 
-### v0.10.1
-
-- Automatically derives L1 as `total - L2 - L3` when a meter does not expose a separate L1 power entity.
-- Works for both the live grid details and the optional three-phase 24-hour graph.
-- Especially useful for HomeWizard P1 setups where L2/L3 are exposed separately but L1 is implicit in total power.
-
-### v0.10.0
-
-- Added optional three-phase Grid sensors for L1/L2/L3 power, voltage and current.
-- Added a **Show phases** switch inside the Grid popup; the normal total Grid graph remains the default.
-- When enabled, the 24-hour graph shows L1, L2 and L3 together as three clearly distinguished lines on one shared scale.
-- Three-phase history is included in the existing bundled background history request, so it benefits from the same preload behavior.
-- Demo mode now includes a three-phase graph so the feature can be tested without sensors.
-- Deliberately did not add phase-imbalance calculations; the feature stays focused on clear per-phase measurements.
-
-### v0.9.2
-
-- Public branding is **Energy Flow Card Pro**. Starting with v0.17.0, the technical card type and resource filename also use the `-pro` suffix to avoid confusion with similarly named projects.
-- Replaced the compact arrow-only price badge with a clearer two-part **Import / Export** price panel.
-- Kept price values compact at two decimals and made the price panel responsive on narrow cards.
-- Fixed wizard step-number alignment so all four steps keep the number and label on one horizontal line.
-- Finalized the 0.9 pricing UI polish before the 0.10 three-phase/network-analysis work.
-
-### v0.9.1
-
-- Moved electricity pricing to its own **Prices** wizard step.
-- Removed supplier presets; dynamic suppliers are handled by Home Assistant integrations and their price entities.
-- Kept backward compatibility with v0.9.0 `dynamic` pricing configs by treating them as price-entity configs.
-- Simplified the compact price badge to two decimals and one shared `/kWh` suffix.
-- Added **Revenue today** to the Grid popup when an export-energy entity and export tariff are configured.
-- Updated Demo mode to use the new price UI and show example daily export revenue.
-
-### v0.9.0
-
-- Added an optional energy pricing system with separate import and export tariffs.
-- Added **Fixed rates**, **Home Assistant price entities** and **Dynamic contract** modes.
-- Added supplier/source presets for Frank Energie, Zonneplan, Tibber, ANWB Energy, NextEnergy, Nord Pool and Other.
-- Supplier presets remain local UI helpers: the card never calls supplier APIs directly; Home Assistant entities provide live prices.
-- Added live import/export prices to the card and current cost/revenue per hour to the Grid popup.
-- Updated Demo mode with example import/export tariffs so pricing can be tested immediately.
-
-### v0.8.3
-
-- Standardized the public project documentation to English.
-- Reworked the README so HACS/GitHub users get one consistent installation and feature reference.
-- Converted all previously Dutch release notes in `CHANGELOG.md` to English.
-- Kept the Home Assistant card UI bilingual; Dutch and English still follow each user's frontend language automatically.
-- No configuration migration is required from v0.8.2.
-
-### v0.8.2
-
-- Added optional device groups. Multiple devices can be combined into one node with summed live power, or shown individually.
-- Group popups list each member's live power and use the same 24-hour history engine as regular nodes.
-- Added an icon dropdown with common Home Assistant/MDI presets and a **Custom…** option for any other `mdi:` icon.
-- Replaced the old shield-style Backup glyph with a generator/alternator-style default icon.
-- Backup consumers now use a compact responsive grid of up to three columns instead of one long vertical stack.
-- Added Dutch and English translations for groups and the icon selector.
-
-### v0.8.1
-
-- Removed the fixed minimum card height so the Flow layout truly follows its content.
-- Reduced the maximum top and bottom spacing around nodes.
-- Moved backup branches into their own column so their connections do not pass through normal consumers.
-- Kept the regular-consumer wrapping introduced in v0.8.0.
-
-### v0.8.0
-
-- Added adaptive sizing to the default Flow layout.
-- Removed fixed Flow canvas heights; the card now fits the actual nodes with bounded top/bottom margins.
-- Added automatic multi-row wrapping for large numbers of consumers, with a maximum of five slots per row.
-- Kept backup nodes and their downstream devices together as layout clusters.
-- Added regression tests for compact height, wrapping and backup clusters.
-
-### v0.7.5
-
-- Started the bundled 24-hour history preload immediately in the background when the card becomes visible.
-- Prevented frequent Home Assistant state updates from repeatedly postponing history preloading.
-- Restored valid session-cached graphs for all nodes as soon as the card loads.
-- Kept the bundled history request, five-minute cache, 96-point graphs and calculated Home history.
-
-### v0.7.4
-
-- Replaced separate node history requests with one bundled Home Assistant history request.
-- Reconstructed all node values on one shared 96-point timeline.
-- Added a calculated 24-hour history graph for **Home**, even without a dedicated Home power sensor.
-- Added peak power, peak time and average power to detail popups.
-
-### v0.7.3
-
-- Added five-minute memory and `sessionStorage` caching for graphs.
-- Added compact history requests and reduced graph data to 96 points over 24 hours.
-- Prevented duplicate concurrent history requests.
-- Improved the GitHub release workflow.
-
-### v0.7.2
-
-- Made the card and flow area more spacious.
-- Moved the detail popup to a responsive viewport overlay so long popups are no longer clipped by the card.
-- Added automatic Dutch/English UI based on the active Home Assistant user language.
-- Added the HACS-ready repository structure, license and GitHub release workflow.
-
-### v0.7.1
-
-- Renamed the main layout to the generic **Flow** name.
-- Added consumer-oriented advanced measurements: voltage, current, consumed today and total consumed.
-- Kept advanced measurements out of the main diagram and inside the node detail popup.
-
-### v0.7.0
-
-- Introduced the Flow layout with production above, grid left, storage right and consumers below Home.
-- Replaced unstable datalists with Home Assistant entity pickers.
-- Fixed name fields losing text while typing.
-- Added optional measured Home power with automatic Home calculation as fallback.
-- Improved handling of unknown/unavailable sensors and compacted the node presentation.
-
-For the full technical release history, see [`CHANGELOG.md`](CHANGELOG.md).
-
-## HACS installation
-
-Until this repository is added to the HACS default store, add it as a custom repository:
-
-1. Open HACS in Home Assistant.
+1. Open **HACS** in Home Assistant.
 2. Open **Custom repositories**.
-3. Add the GitHub repository URL.
-4. Select **Dashboard** as the category.
+3. Add:
+
+   ```text
+   https://github.com/Joost05/energy-flow-card-pro
+   ```
+
+4. Select category **Dashboard**.
 5. Install **Energy Flow Card Pro**.
-6. Reload the browser if Home Assistant asks you to.
+6. Reload the Home Assistant frontend if requested.
 
-For a private development repository, install the built file manually until the repository is publicly accessible to HACS.
-
-## Manual installation
-
-Copy `dist/energy-flow-card-pro.js` to:
+HACS manages the frontend resource for you and installs:
 
 ```text
-/config/www/energy-flow-card-pro/energy-flow-card-pro.js
+energy-flow-card-pro.js
 ```
 
-Add the following dashboard resource as a JavaScript module:
+### Card type
 
-```text
-/local/energy-flow-card-pro/energy-flow-card-pro.js
-```
-
-Then add the card:
+Use the card picker/editor, or create the card in YAML with:
 
 ```yaml
 type: custom:energy-flow-card-pro
 ```
 
-### Migrating from v0.16.x or older
-
-Before v0.17.0 the resource was named `energy-flow-card.js` and the card type was `custom:energy-flow-card`. Because the project had not yet reached a public 1.0 release, v0.17.0 performs a one-time rename to avoid naming confusion. Remove the old dashboard resource, install/load `energy-flow-card-pro.js`, and change existing cards to `type: custom:energy-flow-card-pro`.
-
-## Energy pricing
-
-Pricing is configured in the dedicated **Prices** step of the visual editor. The card deliberately does not contain supplier-specific logic: use the entities exposed by your Home Assistant energy-price integration (for example Tibber) or enter fixed all-in tariffs.
-
-### Fixed tariffs
+For a quick working preview:
 
 ```yaml
-pricing:
-  mode: fixed
-  currency: EUR
-  import_price: 0.31
-  export_price: 0.09
+type: custom:energy-flow-card-pro
+demo: true
 ```
 
-### Home Assistant price entities
+## Manual installation
+
+HACS is recommended, but manual installation is also supported.
+
+1. Download `energy-flow-card-pro.js` from the latest GitHub release.
+2. Copy it to a folder under `/config/www/`, for example:
+
+   ```text
+   /config/www/energy-flow-card-pro/energy-flow-card-pro.js
+   ```
+
+3. Add the Lovelace resource:
+
+   ```text
+   /local/energy-flow-card-pro/energy-flow-card-pro.js
+   ```
+
+4. Add the card with:
+
+   ```yaml
+   type: custom:energy-flow-card-pro
+   ```
+
+> Do not keep a manual resource active at the same time as the HACS-installed resource.
+
+## Quick start
+
+The visual editor is the recommended way to configure the card.
+
+Home is created automatically. A small manual example:
 
 ```yaml
-pricing:
-  mode: entities
-  currency: EUR
-  import_price_entity: sensor.electricity_import_price
-  export_price_entity: sensor.electricity_export_price
-```
-
-Price entities may use currency/kWh or cent/kWh units. The card normalizes common cent-per-kWh units automatically.
-
-When pricing is enabled, the card shows a compact current import/export price badge. The **Grid** popup shows current price, current cost/revenue rate and, when `energy_export_entity` is configured on the Grid node, estimated **Revenue today** from today's exported energy. For variable price entities the historic price series is used when Home Assistant history is available.
-
-## Optional three-phase Grid details
-
-Three-phase support is optional and only affects the **Grid** detail popup. The main energy-flow diagram stays compact and continues to show the total Grid power.
-
-In the visual editor, open **Advanced** on the Grid device and optionally select power, voltage and current sensors for L1, L2 and L3. The three power sensors enable the multi-line 24-hour phase graph. Voltage and current values are shown as detail rows.
-
-```yaml
+type: custom:energy-flow-card-pro
 nodes:
   - name: Grid
     type: grid
-    power_entity: sensor.grid_total_power
-    phase_l1_power_entity: sensor.grid_l1_power
-    phase_l2_power_entity: sensor.grid_l2_power
-    phase_l3_power_entity: sensor.grid_l3_power
-    phase_l1_voltage_entity: sensor.grid_l1_voltage
-    phase_l2_voltage_entity: sensor.grid_l2_voltage
-    phase_l3_voltage_entity: sensor.grid_l3_voltage
-    phase_l1_current_entity: sensor.grid_l1_current
-    phase_l2_current_entity: sensor.grid_l2_current
-    phase_l3_current_entity: sensor.grid_l3_current
+    power_entity: sensor.grid_power
+
+  - name: Solar
+    type: solar
+    power_entity: sensor.solar_power
+
+  - name: Battery
+    type: battery
+    power_entity: sensor.battery_power
+
+  - name: Desk
+    type: consumer
+    power_entity: sensor.desk_power
 ```
 
-Open the Grid node and enable **Show phases** to switch the graph from total Grid power to L1/L2/L3. Phase imbalance is intentionally not calculated.
-
+If `connections` is omitted, the normal **Home-centered topology** is built automatically.
 
 ## Hierarchical consumers
 
-A consumer can be connected behind another consumer. This is useful when a parent smart plug measures a complete desk, rack, room or power strip while individual devices inside that branch also have their own power sensors.
+A parent device can represent a measured total, while child devices show the detailed breakdown behind it.
 
 ```yaml
 nodes:
@@ -273,121 +142,125 @@ nodes:
     name: Desk
     type: consumer
     power_entity: sensor.desk_power
-  - id: computer
-    name: Computer
+
+  - id: strip
+    name: Power strip
     type: consumer
-    power_entity: sensor.computer_power
+    power_entity: sensor.power_strip_power
     connected_to: desk
-  - id: tv
-    name: TV
+
+  - name: Computer
+    type: consumer
+    power_entity: sensor.pc_power
+    connected_to: strip
+
+  - name: TV
     type: consumer
     power_entity: sensor.tv_power
-    connected_to: desk
-  - id: playstation
-    name: PlayStation
+    connected_to: strip
+
+  - name: 3D Printer
     type: consumer
-    power_entity: sensor.playstation_power
-    connected_to: desk
-  - id: printer_3d
-    name: 3D printer
-    type: consumer
-    power_entity: sensor.printer_3d_power
+    power_entity: sensor.printer_power
     connected_to: desk
 ```
 
-The Desk sensor is treated as the measured total for that Home branch. The child devices are a breakdown of that total and are **not added to Home again**, so the hierarchy does not double-count power. Multiple levels are supported. Parent loops are rejected automatically.
+Child devices are a **breakdown of the parent branch** and are not double-counted at Home level.
 
-In the visual editor, use **Connected to** on a consumer to select Home, Backup or another consumer. Choices that would create a loop are hidden.
+Parent nodes can show a **descendant count badge**, and warnings in deep child devices propagate upward so you can still spot problems from the main card.
 
-## Optional device groups
+## History and replay
 
-Groups do not replace the underlying devices. They only change how those devices are presented.
+Energy Flow Card Pro preloads one bundled 24-hour history set and caches it for fast graph opening.
 
-Use `display: grouped` to show one combined node, or `display: individual` to keep all group members visible separately.
+- Click a node to open its 24-hour history popup.
+- Hover on desktop or tap/drag on touch devices to inspect a specific moment.
+- Use the Replay slider on the main card to inspect the **entire energy flow** at an earlier point in the last 24 hours.
+- Press **Live** to return to current values.
 
-```yaml
-type: custom:energy-flow-card-pro
-nodes:
-  - id: heat_pump_1
-    name: Heat pump 1
-    type: heat_pump
-    power_entity: sensor.heat_pump_1_power
-  - id: heat_pump_2
-    name: Heat pump 2
-    type: heat_pump
-    power_entity: sensor.heat_pump_2_power
-groups:
-  - id: heat_pumps
-    name: Heat pumps
-    icon: mdi:heat-pump
-    display: grouped
-    members:
-      - heat_pump_1
-      - heat_pump_2
-```
+Recorder history must be available for the relevant entities.
 
-The grouped node shows the summed live power. Opening the group popup shows the individual member values and the combined history.
+## Pricing and energy statistics
 
-## Icons
+Supported pricing modes:
 
-The visual editor provides a dropdown with common icons for solar, batteries, heat pumps, air conditioning, EV charging, appliances, computers, servers, lighting, pumps, sockets, backup power and more.
+- none
+- fixed import/export tariffs
+- Home Assistant import/export price entities
 
-Choose **Custom…** to enter any supported Material Design Icons value, for example:
+The Grid popup can show:
 
-```text
-mdi:coffee-maker
-```
+- live import/export price
+- cost at this moment
+- signed daily financial result (`export revenue - import cost`)
 
-## Languages
-
-The card automatically follows the active Home Assistant frontend language for each user.
-
-Currently supported:
-
-- English
-- Dutch
-
-Device names entered by the user are never translated automatically.
-
-## Interactive history graphs
-
-All 24-hour power graphs can be inspected directly. Hover with a mouse or tap/drag on a touch device to show the time and power at that point. When the Grid phase view is enabled, the inspector shows L1, L2, L3 and their combined total.
-
-When pricing and cumulative Grid import/export energy entities are configured, **Revenue today** is a signed financial result: export revenue minus import cost. It can therefore be negative on a day where import costs are higher than feed-in revenue.
-
-## Colors and compact replay
-
-### Mobile focus and touch controls
-
-From 0.16.0, cards narrower than 700 px automatically show one hierarchy level at a time. Tap a branch that has children to focus it; use the breadcrumb back button to return. Tapping the focused centre node opens its normal detail popup. Graph inspection uses pointer capture, so dragging across 24-hour graphs works reliably on phones and tablets.
-
-Version 0.15 adds optional color overrides for Solar, Grid, Battery, Home, Consumers, EV chargers, Backup, Generator and Producer nodes. Use the visual editor under **Preview → Colors**, or configure `colors:` in YAML. Connections automatically use the matching node-type color.
-
-The historical replay control is now a single compact row. Moving the slider enters replay mode; while replay is active a **Live** button appears at the far right. Returning to Live hides that button again.
+The Home popup can show **Today / This week / This month** energy and cost statistics when enough energy counters are configured.
 
 ## Diagnostics
 
-Version 0.11 adds lightweight live diagnostics without trying to classify electrical faults. Open any node to see its diagnostic status.
+Diagnostics are available per node and are designed to make sensor/data issues easy to spot.
 
-The card checks the primary power sensor for:
+<table>
+  <tr>
+    <td align="center"><strong>Warning badges on the card</strong></td>
+    <td align="center"><strong>Diagnostic popup example</strong></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/diagnostics-overview.jpg" alt="Card with diagnostic warning badges" width="260"></td>
+    <td><img src="docs/images/diagnostics-popup.jpg" alt="Diagnostic popup example" width="260"></td>
+  </tr>
+</table>
 
-- missing entities;
-- `unavailable` or `unknown` states;
-- stale values that have not updated for more than 15 minutes.
+The card can flag:
 
-When Home has its own independent power sensor, the card can also compare that measurement with the source-side Grid/PV/Battery balance. Differences above 100 W are shown as a warning.
+- missing power entities
+- `unknown` or `unavailable` states
+- stale primary power sensors
+- measurable Home energy-balance differences
+- warnings or errors in descendants of a hierarchical consumer branch
 
-For Home, **Other / unmetered consumption** is calculated as Home load minus the sum of configured consumer nodes. This is useful for seeing the part of the house load that is not represented by individual devices. It is informational, not an electrical-fault alarm.
+## Visual editor
 
-## Development
+The built-in visual editor is the easiest way to add devices, assign entities, configure groups, colors, pricing and preview the layout.
 
-```bash
-npm install
-npm run check
+<p align="center">
+  <img src="docs/images/editor-mobile.jpg" alt="Energy Flow Card Pro editor on mobile" width="420">
+</p>
+
+## Documentation
+
+- [Configuration reference](docs/configuration.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Migration and upgrades](docs/migration.md)
+- [Release process](docs/releasing.md)
+- [Documentation index](docs/README.md)
+- [Changelog](CHANGELOG.md)
+
+## Migration from the older technical name
+
+Before v0.17.0 the project used:
+
+```text
+energy-flow-card.js
+custom:energy-flow-card
 ```
 
-The production bundle is written to `dist/energy-flow-card-pro.js`.
+The current technical identifiers are:
 
-## License
+```text
+energy-flow-card-pro.js
+custom:energy-flow-card-pro
+```
 
-MIT
+If you were using the older manual resource, remove the old resource before switching to the new HACS-managed installation.
+
+## Support
+
+When reporting an issue, include:
+
+- Energy Flow Card Pro version
+- Home Assistant version
+- whether the issue is on desktop, tablet or mobile
+- a screenshot of the problem
+- the relevant card configuration (private entity names can be masked)
+- browser/app console errors if available

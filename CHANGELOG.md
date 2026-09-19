@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Reworked the public README for the upcoming 1.0 release.
+- Added a full configuration reference in `docs/configuration.md`.
+- Added troubleshooting guidance for HACS, caching, history/replay, pricing, diagnostics and hierarchical consumers.
+- Added migration guidance for the v0.17 technical rename and manual-to-HACS installations.
+- Added a maintainer release guide and 1.0 release checklist.
+- Added cropped documentation screenshots and wired them into the README and docs pages.
+
 ## [0.18.0] - 2026-09-20
 
 ### Added
@@ -43,7 +52,6 @@
 - Existing custom colors from 0.15.0/0.15.1 remain readable for backwards compatibility, but the editor no longer offers arbitrary color entry.
 - Improved the color editor layout on narrow Home Assistant editor panels.
 
-# Changelog
 
 ## 0.15.1
 
