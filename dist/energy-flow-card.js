@@ -1,47 +1,53 @@
-// Energy Flow Card v0.7.3
-(() => {
-const __modules = Object.create(null);
-__modules["src/card/EnergyFlowCard.ts"] = function(require, module, exports) {
+(()=>{
+"use strict";
+const __mods={
+"card/EnergyFlowCard.js":(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ConfigError = exports.EnergyFlowCard = void 0;
-const CardConfig_1 = require("../config/CardConfig");
+const CardConfig_1 = __req("config/CardConfig.js");
 Object.defineProperty(exports, "ConfigError", { enumerable: true, get: function () { return CardConfig_1.ConfigError; } });
-const DemoEngine_1 = require("../demo/DemoEngine");
-const flowHelper_1 = require("../helpers/flowHelper");
-const historyHelper_1 = require("../helpers/historyHelper");
-const i18n_1 = require("../helpers/i18n");
-const stateHelper_1 = require("../helpers/stateHelper");
-const AutoLayout_1 = require("../layout/AutoLayout");
-const Node_1 = require("../models/Node");
-const ConnectionRenderer_1 = require("../renderer/ConnectionRenderer");
-const NodeRenderer_1 = require("../renderer/NodeRenderer");
-const PopupRenderer_1 = require("../renderer/PopupRenderer");
-const dom_1 = require("../renderer/dom");
-const styles_1 = require("./styles");
+const DemoEngine_1 = __req("demo/DemoEngine.js");
+const flowHelper_1 = __req("helpers/flowHelper.js");
+const historyHelper_1 = __req("helpers/historyHelper.js");
+const i18n_1 = __req("helpers/i18n.js");
+const stateHelper_1 = __req("helpers/stateHelper.js");
+const AutoLayout_1 = __req("layout/AutoLayout.js");
+const Node_1 = __req("models/Node.js");
+const ConnectionRenderer_1 = __req("renderer/ConnectionRenderer.js");
+const NodeRenderer_1 = __req("renderer/NodeRenderer.js");
+const PopupRenderer_1 = __req("renderer/PopupRenderer.js");
+const dom_1 = __req("renderer/dom.js");
+const styles_1 = __req("card/styles.js");
 const HISTORY_HOURS = 24;
 const HISTORY_TTL_MS = 5 * 60_000;
 const HISTORY_BUCKETS = 96;
-const HISTORY_PRELOAD_DELAY_MS = 1_200;
-const HISTORY_PRELOAD_LIMIT = 8;
-const HISTORY_PRELOAD_CONCURRENCY = 2;
-const HISTORY_SESSION_PREFIX = 'efc-history-v1:';
+const HISTORY_PRELOAD_DELAY_MS = 0;
+const HISTORY_SESSION_PREFIX = 'efc-history-v2:';
 /** In demo-modus begint de tijd op 300 s, zodat er al "geschiedenis" bestaat voor de grafiek. */
 const DEMO_OFFSET_S = 300;
 class EnergyFlowCard extends HTMLElement {
+    config;
+    _hass;
+    nodeEls = new Map();
+    connEls = [];
+    popup = new PopupRenderer_1.Popup(() => this.closePopup());
+    openNodeId;
+    computed;
+    history = new Map();
+    historyBundleInFlight;
+    historyBundleFetchedAt = 0;
+    preloadTimer;
+    timer;
+    demoStart = 0;
+    reducedMotion = false;
+    motionQuery;
+    onMotionChange = (ev) => {
+        this.reducedMotion = ev.matches;
+        this.update();
+    };
     constructor() {
         super();
-        this.nodeEls = new Map();
-        this.connEls = [];
-        this.popup = new PopupRenderer_1.Popup(() => this.closePopup());
-        this.history = new Map();
-        this.historyInFlight = new Map();
-        this.demoStart = 0;
-        this.reducedMotion = false;
-        this.onMotionChange = (ev) => {
-            this.reducedMotion = ev.matches;
-            this.update();
-        };
         this.attachShadow({ mode: 'open' });
     }
     // ----- Home Assistant-contract -----------------------------------------------------------
@@ -50,7 +56,8 @@ class EnergyFlowCard extends HTMLElement {
         this.config = (0, CardConfig_1.normalizeConfig)(raw); // gooit bij ongeldige config; HA toont dan een foutkaart
         this.closePopup();
         this.history.clear();
-        this.historyInFlight.clear();
+        this.historyBundleInFlight = undefined;
+        this.historyBundleFetchedAt = 0;
         this.cancelHistoryPreload();
         this.buildStructure();
         this.syncTimer();
@@ -285,6 +292,14 @@ class EnergyFlowCard extends HTMLElement {
         }
         const powerEntity = node.config.power_entity ?? node.config.production_entity;
         const computedHome = node.role === 'home' && !node.config.power_entity;
+        const history = cfg.demo || powerEntity || computedHome || node.type === 'backup'
+            ? (this.history.get(nodeId)?.state ?? { kind: 'loading' })
+            : { kind: 'none' };
+        if (history.kind === 'ready' && history.points.length > 0) {
+            const peak = history.points.reduce((best, point) => Math.abs(point.v) > Math.abs(best.v) ? point : best, history.points[0]);
+            const avg = history.points.reduce((sum, point) => sum + point.v, 0) / history.points.length;
+            rows.unshift({ label: (0, i18n_1.t)('peak_power', lang), value: `${peak.v < 0 ? '−' : ''}${(0, stateHelper_1.formatPower)(peak.v, cfg.powerFormat)}` }, { label: (0, i18n_1.t)('peak_time', lang), value: new Date(peak.t).toLocaleTimeString(lang || undefined, { hour: '2-digit', minute: '2-digit' }) }, { label: (0, i18n_1.t)('average_power', lang), value: `${avg < 0 ? '−' : ''}${(0, stateHelper_1.formatPower)(avg, cfg.powerFormat)}` });
+        }
         return {
             nodeType: node.type,
             title: view.displayName,
@@ -292,7 +307,7 @@ class EnergyFlowCard extends HTMLElement {
             valueText: view.valueText,
             status: view.status,
             rows,
-            history: cfg.demo || powerEntity || computedHome ? (this.history.get(nodeId)?.state ?? { kind: 'loading' }) : { kind: 'none' },
+            history,
             note: node.role === 'home' ? (0, i18n_1.t)(computedHome ? 'home_computed' : 'home_measured', lang) : undefined,
             powerFormat: cfg.powerFormat,
             language: lang,
@@ -306,71 +321,168 @@ class EnergyFlowCard extends HTMLElement {
         const cached = this.history.get(nodeId);
         if (cached && Date.now() - cached.fetchedAt < HISTORY_TTL_MS)
             return;
-        const existing = this.historyInFlight.get(nodeId);
-        if (existing)
-            return existing;
-        const task = this.loadHistory(nodeId, node);
-        this.historyInFlight.set(nodeId, task);
+        if (cfg.demo) {
+            this.storeHistory(node, this.demoHistory(node));
+            return;
+        }
+        // Een sessie-cache kan een popup onmiddellijk vullen, ook na navigeren/refreshen.
+        const restored = this.readHistorySession(node);
+        if (restored) {
+            this.history.set(node.id, restored);
+            this.refreshOpenPopup(node.id);
+            return;
+        }
+        await this.ensureHistoryBundle();
+    }
+    /**
+     * Eén gezamenlijke history-call voor alle vermogenssensoren van de kaart. Daarna worden
+     * alle nodes op dezelfde 96 tijdstippen opnieuw berekend met exact dezelfde flowlogica als live.
+     * Daardoor krijgt ook een berekende Woning-node een echte 24-uursgrafiek.
+     */
+    async ensureHistoryBundle() {
+        const cfg = this.config;
+        if (!cfg || cfg.demo || !this._hass?.callApi)
+            return;
+        if (this.historyBundleFetchedAt && Date.now() - this.historyBundleFetchedAt < HISTORY_TTL_MS)
+            return;
+        if (this.historyBundleInFlight)
+            return this.historyBundleInFlight;
+        const task = this.loadHistoryBundle();
+        this.historyBundleInFlight = task;
         try {
             await task;
         }
         finally {
-            if (this.historyInFlight.get(nodeId) === task)
-                this.historyInFlight.delete(nodeId);
+            if (this.historyBundleInFlight === task)
+                this.historyBundleInFlight = undefined;
         }
     }
-    async loadHistory(nodeId, node) {
+    historyEntityIds() {
         const cfg = this.config;
         if (!cfg)
-            return;
-        const store = (state, fetchedAt = Date.now()) => {
-            this.history.set(nodeId, { state, fetchedAt });
-            this.writeHistorySession(node, state, fetchedAt);
-            if (this.openNodeId === nodeId && this.popup.isOpen) {
-                const model = this.popupModel(nodeId);
-                if (model)
-                    this.popup.update(model);
+            return [];
+        const ids = new Set();
+        for (const node of cfg.nodes) {
+            const c = node.config;
+            for (const id of [c.power_entity, c.production_entity, c.charge_power_entity, c.discharge_power_entity]) {
+                if (typeof id === 'string' && id)
+                    ids.add(id);
             }
-        };
-        if (cfg.demo) {
-            store(this.demoHistory(node));
-            return;
         }
-        const restored = this.readHistorySession(node);
-        if (restored) {
-            store(restored.state, restored.fetchedAt);
+        for (const conn of cfg.connections)
+            if (conn.entity)
+                ids.add(conn.entity);
+        return [...ids];
+    }
+    async loadHistoryBundle() {
+        const cfg = this.config;
+        const hass = this._hass;
+        if (!cfg || !hass?.callApi)
             return;
-        }
-        const entityId = node.config.power_entity ?? node.config.production_entity;
-        if (!entityId || !this._hass?.callApi) {
-            store({ kind: 'none' });
+        const entityIds = this.historyEntityIds();
+        if (entityIds.length === 0) {
+            for (const node of cfg.nodes)
+                this.storeHistory(node, { kind: 'none' });
+            this.historyBundleFetchedAt = Date.now();
             return;
         }
         try {
             const end = Date.now();
             const start = end - HISTORY_HOURS * 3_600_000;
-            const factor = (0, historyHelper_1.unitFactor)(this._hass.states[entityId]?.attributes.unit_of_measurement);
-            const raw = await (0, historyHelper_1.fetchHistory)(this._hass, entityId, HISTORY_HOURS, factor, node.invert, end);
-            const points = (0, historyHelper_1.bucketize)(raw, start, end, HISTORY_BUCKETS);
-            store(points.length >= 2 ? { kind: 'ready', points, start, end } : { kind: 'none' });
+            const raw = await (0, historyHelper_1.fetchHistoryBatch)(hass, entityIds, HISTORY_HOURS, end);
+            const series = new Map();
+            const timeline = Array.from({ length: HISTORY_BUCKETS }, (_, i) => start + ((end - start) * i) / (HISTORY_BUCKETS - 1));
+            for (const id of entityIds) {
+                const points = (0, historyHelper_1.bucketize)(raw.get(id) ?? [], start, end, HISTORY_BUCKETS);
+                series.set(id, new Map(points.map((p) => [p.t, p.v])));
+            }
+            const perNode = new Map(cfg.nodes.map((n) => [n.id, []]));
+            for (const time of timeline) {
+                const states = {};
+                for (const id of entityIds) {
+                    const value = series.get(id)?.get(time);
+                    if (value === undefined)
+                        continue;
+                    states[id] = { state: String(value), attributes: { unit_of_measurement: 'W' } };
+                }
+                const historicalHass = { states, language: hass.language, locale: hass.locale };
+                const readings = new Map();
+                for (const node of cfg.nodes)
+                    if (node.role !== 'home')
+                        readings.set(node.id, (0, flowHelper_1.readNode)(node, historicalHass));
+                (0, flowHelper_1.applyBackupReadings)(cfg.nodes, cfg.connections, readings, false);
+                const flows = (0, flowHelper_1.computeFlows)(cfg.nodes, cfg.connections, readings, historicalHass);
+                const home = cfg.nodes.find((n) => n.role === 'home');
+                if (home) {
+                    const measured = !!home.config.power_entity;
+                    readings.set(home.id, measured ? (0, flowHelper_1.readNode)(home, historicalHass) : (0, flowHelper_1.computeHomeReading)(home, cfg.nodes, cfg.connections, flows));
+                }
+                for (const node of cfg.nodes) {
+                    const watts = readings.get(node.id)?.watts;
+                    if (typeof watts === 'number')
+                        perNode.get(node.id)?.push({ t: time, v: watts });
+                }
+            }
+            const fetchedAt = Date.now();
+            for (const node of cfg.nodes) {
+                const points = perNode.get(node.id) ?? [];
+                this.storeHistory(node, points.length >= 2 ? { kind: 'ready', points, start, end } : { kind: 'none' }, fetchedAt);
+            }
+            this.historyBundleFetchedAt = fetchedAt;
         }
         catch {
-            store({ kind: 'none' });
+            const fetchedAt = Date.now();
+            for (const node of cfg.nodes)
+                if (!this.history.has(node.id))
+                    this.storeHistory(node, { kind: 'none' }, fetchedAt);
+            this.historyBundleFetchedAt = fetchedAt;
         }
     }
+    storeHistory(node, state, fetchedAt = Date.now()) {
+        this.history.set(node.id, { state, fetchedAt });
+        this.writeHistorySession(node, state, fetchedAt);
+        this.refreshOpenPopup(node.id);
+    }
+    refreshOpenPopup(nodeId) {
+        if (this.openNodeId !== nodeId || !this.popup.isOpen)
+            return;
+        const model = this.popupModel(nodeId);
+        if (model)
+            this.popup.update(model);
+    }
     /**
-     * Laadt een beperkt aantal veelgebruikte grafieken rustig op de achtergrond.
-     * Daardoor opent de popup meestal direct, zonder de dashboard-start met tientallen requests te belasten.
+     * Start de gezamenlijke historie direct op de achtergrond zodra de kaart zichtbaar is.
+     * Home Assistant zet `hass` zeer vaak opnieuw (bij iedere state-update). Daarom mag een
+     * geplande preload hier niet telkens worden geannuleerd en opnieuw gestart: bij snel
+     * wijzigende vermogenssensoren zou de history-call anders eindeloos uitgesteld worden.
      */
     scheduleHistoryPreload() {
-        this.cancelHistoryPreload();
         const cfg = this.config;
         if (!cfg || cfg.demo || !this.isConnected || !this._hass?.callApi || document.hidden)
             return;
+        if (this.preloadTimer !== undefined || this.historyBundleInFlight)
+            return;
+        if (this.historyBundleFetchedAt && Date.now() - this.historyBundleFetchedAt < HISTORY_TTL_MS)
+            return;
+        this.restoreHistorySessionCache();
         this.preloadTimer = window.setTimeout(() => {
             this.preloadTimer = undefined;
-            void this.preloadHistory();
+            void this.ensureHistoryBundle();
         }, HISTORY_PRELOAD_DELAY_MS);
+    }
+    /** Herstelt in één keer de bestaande 5-minuten-cache voor alle nodes. */
+    restoreHistorySessionCache() {
+        const cfg = this.config;
+        if (!cfg)
+            return;
+        for (const node of cfg.nodes) {
+            const current = this.history.get(node.id);
+            if (current && Date.now() - current.fetchedAt < HISTORY_TTL_MS)
+                continue;
+            const restored = this.readHistorySession(node);
+            if (restored)
+                this.history.set(node.id, restored);
+        }
     }
     cancelHistoryPreload() {
         if (this.preloadTimer !== undefined) {
@@ -378,40 +490,24 @@ class EnergyFlowCard extends HTMLElement {
             this.preloadTimer = undefined;
         }
     }
-    async preloadHistory() {
-        const cfg = this.config;
-        if (!cfg || cfg.demo || document.hidden)
-            return;
-        const priority = (node) => {
-            if (node.role === 'home')
-                return 0;
-            if (node.type === 'grid')
-                return 1;
-            if (node.type === 'solar' || node.role === 'source')
-                return 2;
-            if (node.type === 'battery')
-                return 3;
-            return 4;
-        };
-        const nodes = cfg.nodes
-            .filter((node) => !!(node.config.power_entity ?? node.config.production_entity))
-            .sort((a, b) => priority(a) - priority(b))
-            .slice(0, HISTORY_PRELOAD_LIMIT);
-        let next = 0;
-        const worker = async () => {
-            while (next < nodes.length && !document.hidden && this.isConnected) {
-                const node = nodes[next++];
-                if (node)
-                    await this.ensureHistory(node.id);
-            }
-        };
-        await Promise.all(Array.from({ length: Math.min(HISTORY_PRELOAD_CONCURRENCY, nodes.length) }, () => worker()));
-    }
     historySessionKey(node) {
         const entityId = node.config.power_entity ?? node.config.production_entity;
-        if (!entityId)
+        if (entityId)
+            return `${HISTORY_SESSION_PREFIX}${entityId}|${node.invert ? '1' : '0'}`;
+        // Berekende nodes (zoals Woning of een ongemeten backup) zijn afhankelijk van de hele flow-config.
+        // Een compacte configuratiesignatuur voorkomt dat een oude cache bij een andere setup wordt hergebruikt.
+        const cfg = this.config;
+        if (!cfg)
             return undefined;
-        return `${HISTORY_SESSION_PREFIX}${entityId}|${node.invert ? '1' : '0'}`;
+        const signature = cfg.nodes
+            .map((n) => [n.id, n.config.power_entity, n.config.production_entity, n.config.charge_power_entity, n.config.discharge_power_entity, n.invert])
+            .concat(cfg.connections.map((c) => [c.id, c.from, c.to, c.entity, c.invert]))
+            .map((x) => x.join(':'))
+            .join('|');
+        let hash = 2166136261;
+        for (let i = 0; i < signature.length; i++)
+            hash = Math.imul(hash ^ signature.charCodeAt(i), 16777619);
+        return `${HISTORY_SESSION_PREFIX}computed:${node.id}:${(hash >>> 0).toString(36)}`;
     }
     readHistorySession(node) {
         const key = this.historySessionKey(node);
@@ -480,8 +576,8 @@ function labelPositionFor(node, y, homeY, straight) {
     return y < homeY - 1 ? 'above' : 'below';
 }
 
-};
-__modules["src/card/styles.ts"] = function(require, module, exports) {
+},
+"card/styles.js":(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.styles = void 0;
@@ -636,15 +732,15 @@ ha-card.fallback {
 }
 `;
 
-};
-__modules["src/config/CardConfig.ts"] = function(require, module, exports) {
+},
+"config/CardConfig.js":(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ConfigError = void 0;
 exports.normalizeConfig = normalizeConfig;
-const Connection_1 = require("../models/Connection");
-const Node_1 = require("../models/Node");
-const NodeType_1 = require("../types/NodeType");
+const Connection_1 = __req("models/Connection.js");
+const Node_1 = __req("models/Node.js");
+const NodeType_1 = __req("types/NodeType.js");
 class ConfigError extends Error {
     constructor(message) {
         super(message);
@@ -827,13 +923,13 @@ function parseLayout(raw) {
     return { mode, positions };
 }
 
-};
-__modules["src/demo/DemoEngine.ts"] = function(require, module, exports) {
+},
+"demo/DemoEngine.js":(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.demoReadings = demoReadings;
-const flowHelper_1 = require("../helpers/flowHelper");
-const EntityStatus_1 = require("../types/EntityStatus");
+const flowHelper_1 = __req("helpers/flowHelper.js");
+const EntityStatus_1 = __req("types/EntityStatus.js");
 const DAY_SECONDS = 120; // één "dag" duurt twee minuten, zodat je alles snel ziet gebeuren
 const BATTERY_SECONDS = 150;
 const wave = (t, period, phase = 0) => Math.sin((2 * Math.PI * t) / period + phase);
@@ -932,16 +1028,16 @@ function demoReadings(nodes, t) {
     return out;
 }
 
-};
-__modules["src/editor/EnergyFlowCardEditor.ts"] = function(require, module, exports) {
+},
+"editor/EnergyFlowCardEditor.js":(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EnergyFlowCardEditor = void 0;
-const CardConfig_1 = require("../config/CardConfig");
-const i18n_1 = require("../helpers/i18n");
-const Node_1 = require("../models/Node");
-const dom_1 = require("../renderer/dom");
-const NodeType_1 = require("../types/NodeType");
+const CardConfig_1 = __req("config/CardConfig.js");
+const i18n_1 = __req("helpers/i18n.js");
+const Node_1 = __req("models/Node.js");
+const dom_1 = __req("renderer/dom.js");
+const NodeType_1 = __req("types/NodeType.js");
 const SELECTABLE_TYPES = NodeType_1.NODE_TYPES.filter((type) => type !== 'home');
 const POWER_FIELDS = new Set(['power_entity', 'charge_power_entity', 'discharge_power_entity', 'production_entity']);
 const editorStyles = `
@@ -995,13 +1091,15 @@ function stable(value) {
  * wie liever direct YAML schrijft, kan de wizard gewoon overslaan.
  */
 class EnergyFlowCardEditor extends HTMLElement {
+    config = { type: 'custom:energy-flow-card', nodes: [] };
+    step = 1;
+    _hass;
+    lastEmitted = '';
+    /** Welke uitklapsecties ("Geavanceerd") openstaan; overleeft het opnieuw tekenen van de editor. */
+    openSections = new Set();
+    preview;
     constructor() {
         super();
-        this.config = { type: 'custom:energy-flow-card', nodes: [] };
-        this.step = 1;
-        this.lastEmitted = '';
-        /** Welke uitklapsecties ("Geavanceerd") openstaan; overleeft het opnieuw tekenen van de editor. */
-        this.openSections = new Set();
         this.attachShadow({ mode: 'open' });
     }
     setConfig(config) {
@@ -1491,8 +1589,8 @@ class EnergyFlowCardEditor extends HTMLElement {
 }
 exports.EnergyFlowCardEditor = EnergyFlowCardEditor;
 
-};
-__modules["src/helpers/flowHelper.ts"] = function(require, module, exports) {
+},
+"helpers/flowHelper.js":(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.flowToHome = flowToHome;
@@ -1501,8 +1599,8 @@ exports.readNode = readNode;
 exports.computeFlows = computeFlows;
 exports.computeHomeReading = computeHomeReading;
 exports.applyBackupReadings = applyBackupReadings;
-const EntityStatus_1 = require("../types/EntityStatus");
-const stateHelper_1 = require("./stateHelper");
+const EntityStatus_1 = __req("types/EntityStatus.js");
+const stateHelper_1 = __req("helpers/stateHelper.js");
 /** Energie die deze node richting Home stuurt (negatief = neemt energie van Home af). */
 function flowToHome(node, reading) {
     if (reading.watts === null)
@@ -1715,37 +1813,60 @@ function applyBackupReadings(nodes, connections, readings, demo) {
     }
 }
 
-};
-__modules["src/helpers/historyHelper.ts"] = function(require, module, exports) {
+},
+"helpers/historyHelper.js":(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.fetchHistoryBatch = fetchHistoryBatch;
 exports.fetchHistory = fetchHistory;
 exports.bucketize = bucketize;
 exports.unitFactor = unitFactor;
-const stateHelper_1 = require("./stateHelper");
+const stateHelper_1 = __req("helpers/stateHelper.js");
 const HOUR = 3_600_000;
 /**
- * Haalt de geschiedenis van een sensor op via de Home Assistant REST-API
- * (hass.callApi). Waarden worden omgerekend naar W met `unitFactor`.
+ * Haalt de geschiedenis van meerdere vermogenssensoren in één Home Assistant-request op.
+ * Alle waarden worden direct omgerekend naar W, zodat de kaart daarna één gezamenlijke
+ * tijdlijn kan opbouwen voor nodes, verbindingen en de berekende Woning-node.
  */
-async function fetchHistory(hass, entityId, hours, unitFactor, invert, now = Date.now()) {
-    if (!hass.callApi)
-        return [];
-    const start = new Date(now - hours * HOUR).toISOString();
-    const path = `history/period/${start}?filter_entity_id=${encodeURIComponent(entityId)}` +
+async function fetchHistoryBatch(hass, entityIds, hours, now = Date.now()) {
+    const uniqueIds = [...new Set(entityIds.filter(Boolean))];
+    const result = new Map(uniqueIds.map((id) => [id, []]));
+    if (!hass.callApi || uniqueIds.length === 0)
+        return result;
+    const startMs = now - hours * HOUR;
+    const start = new Date(startMs).toISOString();
+    const filter = uniqueIds.join(',');
+    const path = `history/period/${start}?filter_entity_id=${encodeURIComponent(filter)}` +
         `&end_time=${encodeURIComponent(new Date(now).toISOString())}` +
         `&minimal_response&no_attributes&significant_changes_only`;
     const response = await hass.callApi('GET', path);
-    const states = response?.[0] ?? [];
-    const points = [];
-    for (const s of states) {
-        const v = (0, stateHelper_1.parsePower)(s.state);
-        const stamp = s.last_changed ?? s.last_updated;
-        if (v === null || !stamp)
+    for (let index = 0; index < (response ?? []).length; index++) {
+        const states = response?.[index] ?? [];
+        // Bij minimal_response staat entity_id doorgaans alleen op het eerste item. Als HA dit
+        // niet terugstuurt, valt de API-volgorde terug op de volgorde uit filter_entity_id.
+        const entityId = states.find((s) => typeof s.entity_id === 'string')?.entity_id ?? uniqueIds[index];
+        if (!entityId || !result.has(entityId))
             continue;
-        points.push({ t: Math.max(Date.parse(stamp), now - hours * HOUR), v: (invert ? -v : v) * unitFactor });
+        const factor = unitFactor(hass.states[entityId]?.attributes.unit_of_measurement);
+        const points = result.get(entityId);
+        for (const s of states) {
+            const value = (0, stateHelper_1.parsePower)(s.state);
+            const stamp = s.last_changed ?? s.last_updated;
+            if (value === null || !stamp)
+                continue;
+            points.push({ t: Math.max(Date.parse(stamp), startMs), v: value * factor });
+        }
     }
-    return points;
+    return result;
+}
+/** Achterwaarts compatibele single-entity helper. */
+async function fetchHistory(hass, entityId, hours, unitFactorOverride, invert, now = Date.now()) {
+    const batch = await fetchHistoryBatch(hass, [entityId], hours, now);
+    // `fetchHistoryBatch` gebruikt de actuele HA-eenheid. De oude API accepteerde expliciet
+    // een factor; pas alleen het verschil toe zodat bestaande tests/callers correct blijven.
+    const actualFactor = unitFactor(hass.states[entityId]?.attributes.unit_of_measurement);
+    const ratio = actualFactor === 0 ? 1 : unitFactorOverride / actualFactor;
+    return (batch.get(entityId) ?? []).map((p) => ({ t: p.t, v: (invert ? -p.v : p.v) * ratio }));
 }
 /**
  * Brengt een onregelmatige reeks terug tot een vast aantal punten door per interval de
@@ -1780,8 +1901,8 @@ function unitFactor(unit) {
     return 1;
 }
 
-};
-__modules["src/helpers/i18n.ts"] = function(require, module, exports) {
+},
+"helpers/i18n.js":(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.t = t;
@@ -1808,6 +1929,9 @@ const nl = {
     home_measured: "Gemeten met de ingestelde woningsensor",
     minimum: "Min",
     maximum: "Max",
+    peak_power: "Piekvermogen",
+    peak_time: "Piek om",
+    average_power: "Gemiddeld vermogen",
     soc: "Laadtoestand",
     voltage: "Spanning",
     current: "Stroom",
@@ -1890,6 +2014,9 @@ const en = {
     home_measured: "Measured with the configured home sensor",
     minimum: "Min",
     maximum: "Max",
+    peak_power: "Peak power",
+    peak_time: "Peak at",
+    average_power: "Average power",
     soc: "State of charge",
     voltage: "Voltage",
     current: "Current",
@@ -1964,8 +2091,8 @@ function hassLanguage(hass) {
     return hass?.locale?.language ?? hass?.language;
 }
 
-};
-__modules["src/helpers/stateHelper.ts"] = function(require, module, exports) {
+},
+"helpers/stateHelper.js":(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.parsePower = parsePower;
@@ -1974,7 +2101,7 @@ exports.readPower = readPower;
 exports.readNumber = readNumber;
 exports.formatPower = formatPower;
 exports.formatPercent = formatPercent;
-const EntityStatus_1 = require("../types/EntityStatus");
+const EntityStatus_1 = __req("types/EntityStatus.js");
 // Home Assistant gebruikt een punt als decimaalteken; alles anders is voor ons geen getal.
 const NUMBER_PATTERN = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
 /**
@@ -2057,12 +2184,12 @@ function round(value, decimals) {
     return String(Math.round(value * factor) / factor);
 }
 
-};
-__modules["src/index.ts"] = function(require, module, exports) {
+},
+"index.js":(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-const EnergyFlowCard_1 = require("./card/EnergyFlowCard");
-const EnergyFlowCardEditor_1 = require("./editor/EnergyFlowCardEditor");
+const EnergyFlowCard_1 = __req("card/EnergyFlowCard.js");
+const EnergyFlowCardEditor_1 = __req("editor/EnergyFlowCardEditor.js");
 if (!customElements.get('energy-flow-card'))
     customElements.define('energy-flow-card', EnergyFlowCard_1.EnergyFlowCard);
 if (!customElements.get('energy-flow-card-editor'))
@@ -2076,15 +2203,15 @@ if (!window.customCards.some((c) => c.type === 'energy-flow-card')) {
         preview: true,
     });
 }
-console.info('%c ENERGY-FLOW-CARD %c 0.7.3 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
+console.info('%c ENERGY-FLOW-CARD %c 0.7.5 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
 
-};
-__modules["src/layout/AutoLayout.ts"] = function(require, module, exports) {
+},
+"layout/AutoLayout.js":(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.STRAIGHT_ROW_GAP = exports.HOME_RADIUS = exports.NODE_RADIUS = void 0;
 exports.computeLayout = computeLayout;
-const Connection_1 = require("../models/Connection");
+const Connection_1 = __req("models/Connection.js");
 exports.NODE_RADIUS = 38;
 exports.HOME_RADIUS = 46;
 /** Afstand tussen twee rijen in de rechte layout; de rechte lijnen buigen halverwege deze afstand af. */
@@ -2451,8 +2578,8 @@ function straightLayout(nodes, auto, links) {
     return { width: Math.round(width), height: Math.round(height), positions };
 }
 
-};
-__modules["src/models/Connection.ts"] = function(require, module, exports) {
+},
+"models/Connection.js":(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createConnection = createConnection;
@@ -2504,15 +2631,15 @@ function parentOf(node, nodes) {
     return parent?.type === 'backup' ? parent : undefined;
 }
 
-};
-__modules["src/models/Node.ts"] = function(require, module, exports) {
+},
+"models/Node.js":(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createNode = createNode;
 exports.generateId = generateId;
 exports.advancedFieldsFor = advancedFieldsFor;
 exports.fieldLabelKey = fieldLabelKey;
-const NodeType_1 = require("../types/NodeType");
+const NodeType_1 = __req("types/NodeType.js");
 function createNode(config, type, id) {
     return {
         id,
@@ -2587,15 +2714,15 @@ function fieldLabelKey(field, type) {
     return field.replace(/_entity$/, '');
 }
 
-};
-__modules["src/renderer/ConnectionRenderer.ts"] = function(require, module, exports) {
+},
+"renderer/ConnectionRenderer.js":(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.computeGeometry = computeGeometry;
 exports.particleDuration = particleDuration;
 exports.createConnectionElement = createConnectionElement;
-const AutoLayout_1 = require("../layout/AutoLayout");
-const dom_1 = require("./dom");
+const AutoLayout_1 = __req("layout/AutoLayout.js");
+const dom_1 = __req("renderer/dom.js");
 const GAP = 3;
 const PARTICLES = 3;
 const f1 = (n) => n.toFixed(1);
@@ -2771,18 +2898,18 @@ function createConnectionElement(conn, from, to, curved, color, orthogonal = fal
     return { el: g, update };
 }
 
-};
-__modules["src/renderer/NodeRenderer.ts"] = function(require, module, exports) {
+},
+"renderer/NodeRenderer.js":(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.displayNameOf = displayNameOf;
 exports.describeNode = describeNode;
 exports.createNodeElement = createNodeElement;
-const i18n_1 = require("../helpers/i18n");
-const stateHelper_1 = require("../helpers/stateHelper");
-const EntityStatus_1 = require("../types/EntityStatus");
-const NodeType_1 = require("../types/NodeType");
-const dom_1 = require("./dom");
+const i18n_1 = __req("helpers/i18n.js");
+const stateHelper_1 = __req("helpers/stateHelper.js");
+const EntityStatus_1 = __req("types/EntityStatus.js");
+const NodeType_1 = __req("types/NodeType.js");
+const dom_1 = __req("renderer/dom.js");
 const DEFAULT_NAMES = { home: 'home', grid: 'grid', solar: 'solar', battery: 'battery', backup: 'type_backup' };
 function displayNameOf(node, language) {
     if (node.name)
@@ -2944,15 +3071,15 @@ labelPosition = 'below') {
     return { el: g, update };
 }
 
-};
-__modules["src/renderer/PopupRenderer.ts"] = function(require, module, exports) {
+},
+"renderer/PopupRenderer.js":(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Popup = void 0;
 exports.buildGraph = buildGraph;
-const i18n_1 = require("../helpers/i18n");
-const stateHelper_1 = require("../helpers/stateHelper");
-const dom_1 = require("./dom");
+const i18n_1 = __req("helpers/i18n.js");
+const stateHelper_1 = __req("helpers/stateHelper.js");
+const dom_1 = __req("renderer/dom.js");
 const W = 320;
 const H = 128;
 const PAD = { l: 6, r: 6, t: 20, b: 20 };
@@ -2984,10 +3111,16 @@ function buildGraph(points, start, end, format, language) {
     return root;
 }
 class Popup {
+    onClose;
+    el;
+    panel;
+    heading;
+    body;
+    closeButton;
+    opener = null;
+    signature = '';
     constructor(onClose) {
         this.onClose = onClose;
-        this.opener = null;
-        this.signature = '';
         this.heading = (0, dom_1.html)('h2', { class: 'popup-title' });
         this.closeButton = (0, dom_1.html)('button', { class: 'popup-close', type: 'button' }, '×');
         this.body = (0, dom_1.html)('div', { class: 'popup-body' });
@@ -3057,8 +3190,8 @@ class Popup {
 }
 exports.Popup = Popup;
 
-};
-__modules["src/renderer/dom.ts"] = function(require, module, exports) {
+},
+"renderer/dom.js":(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.svg = svg;
@@ -3096,8 +3229,8 @@ function setAttr(el, name, value) {
         el.setAttribute(name, value);
 }
 
-};
-__modules["src/types/EntityStatus.ts"] = function(require, module, exports) {
+},
+"types/EntityStatus.js":(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EntityStatus = void 0;
@@ -3136,8 +3269,8 @@ function hasValue(status) {
     return status === EntityStatus.Valid || status === EntityStatus.Zero || status === EntityStatus.Charging;
 }
 
-};
-__modules["src/types/NodeType.ts"] = function(require, module, exports) {
+},
+"types/NodeType.js":(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TYPES_WITH_DEFAULT_ICON = exports.NODE_TYPES = void 0;
@@ -3201,15 +3334,14 @@ function roleOf(type) {
 /** Home, Grid, PV en Battery krijgen standaard een icoon; bij andere apparaten is het optioneel. */
 exports.TYPES_WITH_DEFAULT_ICON = new Set(['home', 'grid', 'solar', 'battery', 'backup']);
 
-};
-__modules["src/types/hass.ts"] = function(require, module, exports) {
+},
+"types/hass.js":(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 
+},
 };
-const __cache = Object.create(null);
-function __normalize(parts){const out=[];for(const p of parts){if(!p||p==='.')continue;if(p==='..')out.pop();else out.push(p);}return out.join('/');}
-function __resolve(from, req){if(!req.startsWith('.')) throw new Error('External module not bundled: '+req); const base=from.split('/'); base.pop(); let id=__normalize(base.concat(req.split('/'))); if(__modules[id]) return id; if(__modules[id+'.ts']) return id+'.ts'; if(__modules[id+'/index.ts']) return id+'/index.ts'; throw new Error('Module not found: '+req+' from '+from);}
-function __require(id){if(__cache[id]) return __cache[id].exports; const fn=__modules[id]; if(!fn) throw new Error('Module not found: '+id); const module={exports:{}}; __cache[id]=module; const local=(req)=>__require(__resolve(id,req)); fn(local,module,module.exports); return module.exports;}
-__require('src/index.ts');
+const __cache={};
+function __req(id){if(__cache[id])return __cache[id].exports;const f=__mods[id];if(!f)throw new Error("Module not found: "+id);const m={exports:{}};__cache[id]=m;f(m,m.exports,__req);return m.exports;}
+__req("index.js");
 })();

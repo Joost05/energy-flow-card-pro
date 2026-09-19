@@ -1,6 +1,6 @@
 {
   "name": "energy-flow-card",
-  "version": "0.7.3",
+  "version": "0.7.5",
   "description": "Custom Home Assistant Lovelace-kaart die live laat zien waar je energie vandaan komt en waar die heen gaat.",
   "private": true,
   "scripts": {

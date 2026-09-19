@@ -9,6 +9,7 @@ export interface HistoryPoint {
 }
 
 interface RawState {
+  entity_id?: string;
   state: string;
   last_changed?: string;
   last_updated?: string;
@@ -17,34 +18,62 @@ interface RawState {
 const HOUR = 3_600_000;
 
 /**
- * Haalt de geschiedenis van een sensor op via de Home Assistant REST-API
- * (hass.callApi). Waarden worden omgerekend naar W met `unitFactor`.
+ * Haalt de geschiedenis van meerdere vermogenssensoren in één Home Assistant-request op.
+ * Alle waarden worden direct omgerekend naar W, zodat de kaart daarna één gezamenlijke
+ * tijdlijn kan opbouwen voor nodes, verbindingen en de berekende Woning-node.
  */
+export async function fetchHistoryBatch(
+  hass: Hass,
+  entityIds: readonly string[],
+  hours: number,
+  now: number = Date.now(),
+): Promise<Map<string, HistoryPoint[]>> {
+  const uniqueIds = [...new Set(entityIds.filter(Boolean))];
+  const result = new Map<string, HistoryPoint[]>(uniqueIds.map((id) => [id, []]));
+  if (!hass.callApi || uniqueIds.length === 0) return result;
+
+  const startMs = now - hours * HOUR;
+  const start = new Date(startMs).toISOString();
+  const filter = uniqueIds.join(',');
+  const path =
+    `history/period/${start}?filter_entity_id=${encodeURIComponent(filter)}` +
+    `&end_time=${encodeURIComponent(new Date(now).toISOString())}` +
+    `&minimal_response&no_attributes&significant_changes_only`;
+
+  const response = await hass.callApi<RawState[][]>('GET', path);
+  for (let index = 0; index < (response ?? []).length; index++) {
+    const states = response?.[index] ?? [];
+    // Bij minimal_response staat entity_id doorgaans alleen op het eerste item. Als HA dit
+    // niet terugstuurt, valt de API-volgorde terug op de volgorde uit filter_entity_id.
+    const entityId = states.find((s) => typeof s.entity_id === 'string')?.entity_id ?? uniqueIds[index];
+    if (!entityId || !result.has(entityId)) continue;
+    const factor = unitFactor(hass.states[entityId]?.attributes.unit_of_measurement);
+    const points = result.get(entityId)!;
+    for (const s of states) {
+      const value = parsePower(s.state);
+      const stamp = s.last_changed ?? s.last_updated;
+      if (value === null || !stamp) continue;
+      points.push({ t: Math.max(Date.parse(stamp), startMs), v: value * factor });
+    }
+  }
+  return result;
+}
+
+/** Achterwaarts compatibele single-entity helper. */
 export async function fetchHistory(
   hass: Hass,
   entityId: string,
   hours: number,
-  unitFactor: number,
+  unitFactorOverride: number,
   invert: boolean,
   now: number = Date.now(),
 ): Promise<HistoryPoint[]> {
-  if (!hass.callApi) return [];
-  const start = new Date(now - hours * HOUR).toISOString();
-  const path =
-    `history/period/${start}?filter_entity_id=${encodeURIComponent(entityId)}` +
-    `&end_time=${encodeURIComponent(new Date(now).toISOString())}` +
-    `&minimal_response&no_attributes&significant_changes_only`;
-  const response = await hass.callApi<RawState[][]>('GET', path);
-  const states = response?.[0] ?? [];
-
-  const points: HistoryPoint[] = [];
-  for (const s of states) {
-    const v = parsePower(s.state);
-    const stamp = s.last_changed ?? s.last_updated;
-    if (v === null || !stamp) continue;
-    points.push({ t: Math.max(Date.parse(stamp), now - hours * HOUR), v: (invert ? -v : v) * unitFactor });
-  }
-  return points;
+  const batch = await fetchHistoryBatch(hass, [entityId], hours, now);
+  // `fetchHistoryBatch` gebruikt de actuele HA-eenheid. De oude API accepteerde expliciet
+  // een factor; pas alleen het verschil toe zodat bestaande tests/callers correct blijven.
+  const actualFactor = unitFactor(hass.states[entityId]?.attributes.unit_of_measurement);
+  const ratio = actualFactor === 0 ? 1 : unitFactorOverride / actualFactor;
+  return (batch.get(entityId) ?? []).map((p) => ({ t: p.t, v: (invert ? -p.v : p.v) * ratio }));
 }
 
 /**

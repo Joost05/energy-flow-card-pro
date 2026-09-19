@@ -6,11 +6,59 @@ A custom Home Assistant Lovelace card for visualising live energy flows between 
 
 - Live animated energy flows
 - Flow, round and straight layouts
-- Optional home power sensor or automatic home calculation
-- Detail popup with 24-hour graph and extra measurements
+- Optional home power sensor or automatic home calculation with reconstructed 24-hour history
+- Detail popup with 24-hour graph, peak/average power and extra measurements
 - Home Assistant entity pickers in the visual editor
 - Dutch and English UI, following the active Home Assistant frontend language
+- Light and dark theme support through Home Assistant theme variables
+- Responsive layout for desktop, tablet and mobile
 - Demo mode for testing without sensors
+
+## Version history
+
+### v0.7.5
+
+- 24-hour history preload now starts immediately in the background when the card becomes visible.
+- Frequent Home Assistant state updates no longer cancel and restart the preload timer, preventing history loading from being postponed indefinitely.
+- Valid session-cached graphs for all nodes are restored as soon as the card loads, so dashboard navigation and refreshes can show graphs immediately.
+- The existing five-minute memory/session cache and bundled history request remain in place.
+
+### v0.7.4
+
+- Replaced separate node history requests with one bundled Home Assistant history request.
+- Reconstructs all node values on one shared 96-point timeline.
+- Added a calculated 24-hour history graph for **Home**, even when Home has no dedicated power sensor.
+- Added peak power, peak time and average power to the detail popup.
+
+### v0.7.3
+
+- Added five-minute memory and `sessionStorage` caching for graphs.
+- Added compact history requests and reduced graph data to 96 points over 24 hours.
+- Prevented duplicate concurrent history requests.
+- Improved the GitHub release workflow.
+
+### v0.7.2
+
+- Made the card and flow area more spacious.
+- Moved the detail popup to a responsive viewport overlay so long popups are no longer clipped by the card.
+- Added automatic Dutch/English UI based on the active Home Assistant user language.
+- Added the HACS-ready repository structure, license and GitHub release workflow.
+
+### v0.7.1
+
+- Renamed the main layout to the generic **Flow** name.
+- Added consumer-oriented advanced measurements: voltage, current, consumed today and total consumed.
+- Kept advanced measurements out of the main diagram and inside the node detail popup.
+
+### v0.7.0
+
+- Introduced the Flow layout with production above, grid left, storage right and consumers below Home.
+- Replaced unstable datalists with Home Assistant entity pickers.
+- Fixed name fields losing text while typing.
+- Added optional measured Home power with automatic Home calculation as fallback.
+- Improved handling of unknown/unavailable sensors and compacted the node presentation.
+
+For the full technical list, see [`CHANGELOG.md`](CHANGELOG.md).
 
 ## HACS installation
 

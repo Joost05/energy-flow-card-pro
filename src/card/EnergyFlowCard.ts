@@ -7,9 +7,9 @@ import {
   computeHomeReading,
   readNode,
 } from '../helpers/flowHelper';
-import { HistoryPoint, bucketize, fetchHistory, unitFactor } from '../helpers/historyHelper';
+import { HistoryPoint, bucketize, fetchHistoryBatch } from '../helpers/historyHelper';
 import { hassLanguage, t } from '../helpers/i18n';
-import { parsePower } from '../helpers/stateHelper';
+import { formatPower, parsePower } from '../helpers/stateHelper';
 import { HOME_RADIUS, NODE_RADIUS, computeLayout } from '../layout/AutoLayout';
 import type { Connection } from '../models/Connection';
 import { EnergyNode, advancedFieldsFor, fieldLabelKey } from '../models/Node';
@@ -23,10 +23,8 @@ import { styles } from './styles';
 const HISTORY_HOURS = 24;
 const HISTORY_TTL_MS = 5 * 60_000;
 const HISTORY_BUCKETS = 96;
-const HISTORY_PRELOAD_DELAY_MS = 1_200;
-const HISTORY_PRELOAD_LIMIT = 8;
-const HISTORY_PRELOAD_CONCURRENCY = 2;
-const HISTORY_SESSION_PREFIX = 'efc-history-v1:';
+const HISTORY_PRELOAD_DELAY_MS = 0;
+const HISTORY_SESSION_PREFIX = 'efc-history-v2:';
 /** In demo-modus begint de tijd op 300 s, zodat er al "geschiedenis" bestaat voor de grafiek. */
 const DEMO_OFFSET_S = 300;
 
@@ -44,7 +42,8 @@ export class EnergyFlowCard extends HTMLElement {
   private openNodeId?: string;
   private computed?: Computed;
   private history = new Map<string, { state: HistoryState; fetchedAt: number }>();
-  private historyInFlight = new Map<string, Promise<void>>();
+  private historyBundleInFlight?: Promise<void>;
+  private historyBundleFetchedAt = 0;
   private preloadTimer?: number;
   private timer?: number;
   private demoStart = 0;
@@ -67,7 +66,8 @@ export class EnergyFlowCard extends HTMLElement {
     this.config = normalizeConfig(raw); // gooit bij ongeldige config; HA toont dan een foutkaart
     this.closePopup();
     this.history.clear();
-    this.historyInFlight.clear();
+    this.historyBundleInFlight = undefined;
+    this.historyBundleFetchedAt = 0;
     this.cancelHistoryPreload();
     this.buildStructure();
     this.syncTimer();
@@ -326,6 +326,19 @@ export class EnergyFlowCard extends HTMLElement {
 
     const powerEntity = node.config.power_entity ?? node.config.production_entity;
     const computedHome = node.role === 'home' && !node.config.power_entity;
+    const history = cfg.demo || powerEntity || computedHome || node.type === 'backup'
+      ? (this.history.get(nodeId)?.state ?? { kind: 'loading' as const })
+      : { kind: 'none' as const };
+
+    if (history.kind === 'ready' && history.points.length > 0) {
+      const peak = history.points.reduce((best, point) => Math.abs(point.v) > Math.abs(best.v) ? point : best, history.points[0]!);
+      const avg = history.points.reduce((sum, point) => sum + point.v, 0) / history.points.length;
+      rows.unshift(
+        { label: t('peak_power', lang), value: `${peak.v < 0 ? '−' : ''}${formatPower(peak.v, cfg.powerFormat)}` },
+        { label: t('peak_time', lang), value: new Date(peak.t).toLocaleTimeString(lang || undefined, { hour: '2-digit', minute: '2-digit' }) },
+        { label: t('average_power', lang), value: `${avg < 0 ? '−' : ''}${formatPower(avg, cfg.powerFormat)}` },
+      );
+    }
 
     return {
       nodeType: node.type,
@@ -334,7 +347,7 @@ export class EnergyFlowCard extends HTMLElement {
       valueText: view.valueText,
       status: view.status,
       rows,
-      history: cfg.demo || powerEntity || computedHome ? (this.history.get(nodeId)?.state ?? { kind: 'loading' }) : { kind: 'none' },
+      history,
       note: node.role === 'home' ? t(computedHome ? 'home_computed' : 'home_measured', lang) : undefined,
       powerFormat: cfg.powerFormat,
       language: lang,
@@ -349,73 +362,161 @@ export class EnergyFlowCard extends HTMLElement {
     const cached = this.history.get(nodeId);
     if (cached && Date.now() - cached.fetchedAt < HISTORY_TTL_MS) return;
 
-    const existing = this.historyInFlight.get(nodeId);
-    if (existing) return existing;
+    if (cfg.demo) {
+      this.storeHistory(node, this.demoHistory(node));
+      return;
+    }
 
-    const task = this.loadHistory(nodeId, node);
-    this.historyInFlight.set(nodeId, task);
+    // Een sessie-cache kan een popup onmiddellijk vullen, ook na navigeren/refreshen.
+    const restored = this.readHistorySession(node);
+    if (restored) {
+      this.history.set(node.id, restored);
+      this.refreshOpenPopup(node.id);
+      return;
+    }
+
+    await this.ensureHistoryBundle();
+  }
+
+  /**
+   * Eén gezamenlijke history-call voor alle vermogenssensoren van de kaart. Daarna worden
+   * alle nodes op dezelfde 96 tijdstippen opnieuw berekend met exact dezelfde flowlogica als live.
+   * Daardoor krijgt ook een berekende Woning-node een echte 24-uursgrafiek.
+   */
+  private async ensureHistoryBundle(): Promise<void> {
+    const cfg = this.config;
+    if (!cfg || cfg.demo || !this._hass?.callApi) return;
+    if (this.historyBundleFetchedAt && Date.now() - this.historyBundleFetchedAt < HISTORY_TTL_MS) return;
+    if (this.historyBundleInFlight) return this.historyBundleInFlight;
+
+    const task = this.loadHistoryBundle();
+    this.historyBundleInFlight = task;
     try {
       await task;
     } finally {
-      if (this.historyInFlight.get(nodeId) === task) this.historyInFlight.delete(nodeId);
+      if (this.historyBundleInFlight === task) this.historyBundleInFlight = undefined;
     }
   }
 
-  private async loadHistory(nodeId: string, node: EnergyNode): Promise<void> {
+  private historyEntityIds(): string[] {
     const cfg = this.config;
-    if (!cfg) return;
-
-    const store = (state: HistoryState, fetchedAt: number = Date.now()): void => {
-      this.history.set(nodeId, { state, fetchedAt });
-      this.writeHistorySession(node, state, fetchedAt);
-      if (this.openNodeId === nodeId && this.popup.isOpen) {
-        const model = this.popupModel(nodeId);
-        if (model) this.popup.update(model);
+    if (!cfg) return [];
+    const ids = new Set<string>();
+    for (const node of cfg.nodes) {
+      const c = node.config;
+      for (const id of [c.power_entity, c.production_entity, c.charge_power_entity, c.discharge_power_entity]) {
+        if (typeof id === 'string' && id) ids.add(id);
       }
-    };
-
-    if (cfg.demo) {
-      store(this.demoHistory(node));
-      return;
     }
+    for (const conn of cfg.connections) if (conn.entity) ids.add(conn.entity);
+    return [...ids];
+  }
 
-    const restored = this.readHistorySession(node);
-    if (restored) {
-      store(restored.state, restored.fetchedAt);
-      return;
-    }
+  private async loadHistoryBundle(): Promise<void> {
+    const cfg = this.config;
+    const hass = this._hass;
+    if (!cfg || !hass?.callApi) return;
 
-    const entityId = node.config.power_entity ?? node.config.production_entity;
-    if (!entityId || !this._hass?.callApi) {
-      store({ kind: 'none' });
+    const entityIds = this.historyEntityIds();
+    if (entityIds.length === 0) {
+      for (const node of cfg.nodes) this.storeHistory(node, { kind: 'none' });
+      this.historyBundleFetchedAt = Date.now();
       return;
     }
 
     try {
       const end = Date.now();
       const start = end - HISTORY_HOURS * 3_600_000;
-      const factor = unitFactor(this._hass.states[entityId]?.attributes.unit_of_measurement);
-      const raw = await fetchHistory(this._hass, entityId, HISTORY_HOURS, factor, node.invert, end);
-      const points = bucketize(raw, start, end, HISTORY_BUCKETS);
-      store(points.length >= 2 ? { kind: 'ready', points, start, end } : { kind: 'none' });
+      const raw = await fetchHistoryBatch(hass, entityIds, HISTORY_HOURS, end);
+      const series = new Map<string, Map<number, number>>();
+      const timeline = Array.from({ length: HISTORY_BUCKETS }, (_, i) => start + ((end - start) * i) / (HISTORY_BUCKETS - 1));
+
+      for (const id of entityIds) {
+        const points = bucketize(raw.get(id) ?? [], start, end, HISTORY_BUCKETS);
+        series.set(id, new Map(points.map((p) => [p.t, p.v])));
+      }
+
+      const perNode = new Map<string, HistoryPoint[]>(cfg.nodes.map((n) => [n.id, []]));
+      for (const time of timeline) {
+        const states: Hass['states'] = {};
+        for (const id of entityIds) {
+          const value = series.get(id)?.get(time);
+          if (value === undefined) continue;
+          states[id] = { state: String(value), attributes: { unit_of_measurement: 'W' } };
+        }
+        const historicalHass: Hass = { states, language: hass.language, locale: hass.locale };
+        const readings = new Map<string, NodeReading>();
+        for (const node of cfg.nodes) if (node.role !== 'home') readings.set(node.id, readNode(node, historicalHass));
+        applyBackupReadings(cfg.nodes, cfg.connections, readings, false);
+        const flows = computeFlows(cfg.nodes, cfg.connections, readings, historicalHass);
+        const home = cfg.nodes.find((n) => n.role === 'home');
+        if (home) {
+          const measured = !!home.config.power_entity;
+          readings.set(home.id, measured ? readNode(home, historicalHass) : computeHomeReading(home, cfg.nodes, cfg.connections, flows));
+        }
+        for (const node of cfg.nodes) {
+          const watts = readings.get(node.id)?.watts;
+          if (typeof watts === 'number') perNode.get(node.id)?.push({ t: time, v: watts });
+        }
+      }
+
+      const fetchedAt = Date.now();
+      for (const node of cfg.nodes) {
+        const points = perNode.get(node.id) ?? [];
+        this.storeHistory(node, points.length >= 2 ? { kind: 'ready', points, start, end } : { kind: 'none' }, fetchedAt);
+      }
+      this.historyBundleFetchedAt = fetchedAt;
     } catch {
-      store({ kind: 'none' });
+      const fetchedAt = Date.now();
+      for (const node of cfg.nodes) if (!this.history.has(node.id)) this.storeHistory(node, { kind: 'none' }, fetchedAt);
+      this.historyBundleFetchedAt = fetchedAt;
     }
   }
 
+  private storeHistory(node: EnergyNode, state: HistoryState, fetchedAt: number = Date.now()): void {
+    this.history.set(node.id, { state, fetchedAt });
+    this.writeHistorySession(node, state, fetchedAt);
+    this.refreshOpenPopup(node.id);
+  }
+
+  private refreshOpenPopup(nodeId: string): void {
+    if (this.openNodeId !== nodeId || !this.popup.isOpen) return;
+    const model = this.popupModel(nodeId);
+    if (model) this.popup.update(model);
+  }
+
   /**
-   * Laadt een beperkt aantal veelgebruikte grafieken rustig op de achtergrond.
-   * Daardoor opent de popup meestal direct, zonder de dashboard-start met tientallen requests te belasten.
+   * Start de gezamenlijke historie direct op de achtergrond zodra de kaart zichtbaar is.
+   * Home Assistant zet `hass` zeer vaak opnieuw (bij iedere state-update). Daarom mag een
+   * geplande preload hier niet telkens worden geannuleerd en opnieuw gestart: bij snel
+   * wijzigende vermogenssensoren zou de history-call anders eindeloos uitgesteld worden.
    */
   private scheduleHistoryPreload(): void {
-    this.cancelHistoryPreload();
     const cfg = this.config;
     if (!cfg || cfg.demo || !this.isConnected || !this._hass?.callApi || document.hidden) return;
+    if (this.preloadTimer !== undefined || this.historyBundleInFlight) return;
+    if (this.historyBundleFetchedAt && Date.now() - this.historyBundleFetchedAt < HISTORY_TTL_MS) return;
+
+    // Vul eerst alle nog geldige sessiecaches terug. Daardoor zijn popups na een dashboard-
+    // navigatie of refresh direct bruikbaar, terwijl een eventuele netwerkrefresh parallel volgt.
+    this.restoreHistorySessionCache();
 
     this.preloadTimer = window.setTimeout(() => {
       this.preloadTimer = undefined;
-      void this.preloadHistory();
+      void this.ensureHistoryBundle();
     }, HISTORY_PRELOAD_DELAY_MS);
+  }
+
+  /** Herstelt in één keer de bestaande 5-minuten-cache voor alle nodes. */
+  private restoreHistorySessionCache(): void {
+    const cfg = this.config;
+    if (!cfg) return;
+    for (const node of cfg.nodes) {
+      const current = this.history.get(node.id);
+      if (current && Date.now() - current.fetchedAt < HISTORY_TTL_MS) continue;
+      const restored = this.readHistorySession(node);
+      if (restored) this.history.set(node.id, restored);
+    }
   }
 
   private cancelHistoryPreload(): void {
@@ -425,37 +526,22 @@ export class EnergyFlowCard extends HTMLElement {
     }
   }
 
-  private async preloadHistory(): Promise<void> {
-    const cfg = this.config;
-    if (!cfg || cfg.demo || document.hidden) return;
-
-    const priority = (node: EnergyNode): number => {
-      if (node.role === 'home') return 0;
-      if (node.type === 'grid') return 1;
-      if (node.type === 'solar' || node.role === 'source') return 2;
-      if (node.type === 'battery') return 3;
-      return 4;
-    };
-
-    const nodes = cfg.nodes
-      .filter((node) => !!(node.config.power_entity ?? node.config.production_entity))
-      .sort((a, b) => priority(a) - priority(b))
-      .slice(0, HISTORY_PRELOAD_LIMIT);
-
-    let next = 0;
-    const worker = async (): Promise<void> => {
-      while (next < nodes.length && !document.hidden && this.isConnected) {
-        const node = nodes[next++];
-        if (node) await this.ensureHistory(node.id);
-      }
-    };
-    await Promise.all(Array.from({ length: Math.min(HISTORY_PRELOAD_CONCURRENCY, nodes.length) }, () => worker()));
-  }
-
   private historySessionKey(node: EnergyNode): string | undefined {
     const entityId = node.config.power_entity ?? node.config.production_entity;
-    if (!entityId) return undefined;
-    return `${HISTORY_SESSION_PREFIX}${entityId}|${node.invert ? '1' : '0'}`;
+    if (entityId) return `${HISTORY_SESSION_PREFIX}${entityId}|${node.invert ? '1' : '0'}`;
+
+    // Berekende nodes (zoals Woning of een ongemeten backup) zijn afhankelijk van de hele flow-config.
+    // Een compacte configuratiesignatuur voorkomt dat een oude cache bij een andere setup wordt hergebruikt.
+    const cfg = this.config;
+    if (!cfg) return undefined;
+    const signature = cfg.nodes
+      .map((n) => [n.id, n.config.power_entity, n.config.production_entity, n.config.charge_power_entity, n.config.discharge_power_entity, n.invert])
+      .concat(cfg.connections.map((c) => [c.id, c.from, c.to, c.entity, c.invert]))
+      .map((x) => x.join(':'))
+      .join('|');
+    let hash = 2166136261;
+    for (let i = 0; i < signature.length; i++) hash = Math.imul(hash ^ signature.charCodeAt(i), 16777619);
+    return `${HISTORY_SESSION_PREFIX}computed:${node.id}:${(hash >>> 0).toString(36)}`;
   }
 
   private readHistorySession(node: EnergyNode): { state: HistoryState; fetchedAt: number } | undefined {

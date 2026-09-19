@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.7.5
+
+- De gezamenlijke 24-uurs history-load start nu direct op de achtergrond zodra de kaart zichtbaar is, in plaats van pas na een wachttijd.
+- Home Assistant zet `hass` opnieuw bij vrijwel iedere state-update. Die updates annuleren de preload niet langer; daardoor kan een snel wijzigende vermogenssensor de history-load niet meer eindeloos uitstellen.
+- Geldige `sessionStorage`-grafieken van alle nodes worden bij het laden van de kaart direct teruggezet, zodat navigeren of refreshen binnen de cacheperiode meteen grafieken kan tonen.
+- De bestaande gebundelde history-call, vijf-minuten-cache, 96-puntsgrafieken en berekende Woning-historie blijven behouden.
+- README uitgebreid met een overzicht van alle releases vanaf v0.7.0.
+- Versienummer bijgewerkt naar **0.7.5**.
+
+## v0.7.4
+
+- Alle 24-uurs vermogenshistorie wordt nu met één gebundelde Home Assistant history-request opgehaald in plaats van één request per node.
+- Alle nodes worden op dezelfde 96 tijdstippen opnieuw berekend met dezelfde flowlogica als de live kaart.
+- **Woning** krijgt nu ook zonder eigen vermogenssensor een echte 24-uursgrafiek, opgebouwd uit de historische energiestromen.
+- Ongemeten backup-nodes en batterijen met losse laad-/ontlaadsensoren kunnen eveneens historische grafieken krijgen via de gezamenlijke berekening.
+- Detailpopups tonen bij beschikbare historie nu piekvermogen, tijdstip van de piek en gemiddeld vermogen over de grafiekperiode.
+- De bestaande geheugen- en `sessionStorage`-cache blijft behouden; na de eerste gezamenlijke laadactie openen alle nodegrafieken direct.
+- Versienummer bijgewerkt naar **0.7.4**.
+
 ## v0.7.3
 
 - 24-uursgrafieken laden merkbaar sneller door compactere Home Assistant history-requests met `significant_changes_only`.
