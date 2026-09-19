@@ -166,3 +166,27 @@ describe('weergave (layout.mode)', () => {
     assert.throws(() => normalizeConfig({ demo: true, layout: { mode: 'driehoek' } }), /layout\.mode/);
   });
 });
+
+describe('optionele apparaatgroepen', () => {
+  it('valideert een groep en bewaart de onderliggende nodes', () => {
+    const cfg = normalizeConfig({
+      nodes: [
+        { id: 'wp_1', name: 'WP 1', type: 'heat_pump', power_entity: 'sensor.wp1' },
+        { id: 'wp_2', name: 'WP 2', type: 'heat_pump', power_entity: 'sensor.wp2' },
+      ],
+      groups: [{ id: 'wp', name: 'Warmtepompen', members: ['wp_1', 'wp_2'], display: 'grouped' }],
+    });
+    assert.equal(cfg.groups.length, 1);
+    assert.deepEqual(cfg.groups[0]!.memberIds, ['wp_1', 'wp_2']);
+    assert.equal(cfg.groups[0]!.type, 'heat_pump');
+    assert.equal(cfg.nodes.filter((n) => n.type === 'heat_pump').length, 2);
+  });
+
+  it('kan dezelfde groep ook individueel weergeven', () => {
+    const cfg = normalizeConfig({
+      nodes: [{ name: 'A', type: 'consumer' }, { name: 'B', type: 'consumer' }],
+      groups: [{ name: 'Samen', members: ['a', 'b'], display: 'individual' }],
+    });
+    assert.equal(cfg.groups[0]!.display, 'individual');
+  });
+});

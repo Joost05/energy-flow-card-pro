@@ -1,3 +1,16 @@
+# Changelog
+
+## 0.8.2
+
+- Optionele apparaatgroepen toegevoegd. Een groep kan als één totaalnode worden weergegeven of de leden individueel laten staan.
+- Groepsvermogen wordt live opgeteld uit de onderliggende apparaten; de popup toont de afzonderlijke leden.
+- Groepshistorie gebruikt dezelfde gebundelde 24-uurs history-engine als gewone nodes.
+- Icoonveld vervangen door een dropdown met veelgebruikte presets en een vrije **Aangepast…** `mdi:`-optie.
+- Standaard Backup-icoon gewijzigd van schild/bliksem naar een generator/alternator-symbool.
+- Backup-verbruikers worden automatisch in een compact raster van maximaal drie kolommen geplaatst in plaats van één lange verticale stack.
+- Nederlandse en Engelse vertalingen toegevoegd voor groepen en de icoonkiezer.
+- Nieuwe regressietests voor groepen, groepsvermogen en het backup-raster.
+
 ## 0.8.1
 
 - Verwijderd vaste minimale kaarthoogte; Flow-layout past nu echt op de inhoud.
@@ -5,9 +18,6 @@
 - Backup-takken krijgen een eigen kolom zodat verbindingen niet door gewone verbruikers lopen.
 - Apparaten achter een backup worden verticaal onder elkaar gestapeld.
 - Bestaande 0.8 wrapping van maximaal vijf gewone verbruikers per rij blijft behouden.
-
-# Changelog
-
 
 ## 0.8.0
 

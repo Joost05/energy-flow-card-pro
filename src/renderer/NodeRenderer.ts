@@ -104,10 +104,11 @@ function glyph(type: string): SVGGElement {
       );
       break;
     case 'backup':
-      // Een schild met bliksemschicht: de woning-groep die ook bij een netstoring stroom houdt.
+      // Generator/alternator: duidelijker als alternatieve voedingsbron dan het oude schild.
       g.append(
-        svg('path', { d: 'M12 2.8 L19.5 5.8 V12 C19.5 16.6 16.4 19.9 12 21.4 C7.6 19.9 4.5 16.6 4.5 12 V5.8 Z' }),
-        svg('path', { d: 'M12.9 7.6 L9.4 12.6 H12.4 L11.2 16.6 L14.8 11.4 H11.8 Z' }),
+        svg('rect', { x: 4, y: 6, width: 16, height: 12, rx: 2.2 }),
+        svg('circle', { cx: 10, cy: 12, r: 3.1 }),
+        svg('path', { d: 'M13.3 12 H17 M17 9.6 V14.4 M6.5 18 V20 M17.5 18 V20' }),
       );
       break;
     default:

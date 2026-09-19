@@ -37,7 +37,10 @@ export interface NodeConfig extends Partial<Record<AdvancedField, string>> {
   /** Alleen voor verbruikers: hangt dit apparaat achter een backup (naam of id)? Zonder deze optie hangt het aan Home. */
   connected_to?: string;
   entities?: ExtraEntity[];
+  /** Interne markering voor een virtuele groep-node. */
+  group_members?: string[];
 }
+
 
 /** Een gevalideerde node met een uniek id: "wat is het?" */
 export interface EnergyNode {
@@ -48,7 +51,10 @@ export interface EnergyNode {
   icon?: string;
   invert: boolean;
   config: NodeConfig;
+  /** Virtuele groep-node; bevat ids van de onderliggende apparaten. */
+  groupMembers?: string[];
 }
+
 
 export function createNode(config: NodeConfig, type: NodeType, id: string): EnergyNode {
   return {
@@ -59,6 +65,7 @@ export function createNode(config: NodeConfig, type: NodeType, id: string): Ener
     icon: config.icon?.trim() || undefined,
     invert: config.invert === true,
     config,
+    groupMembers: Array.isArray(config.group_members) ? [...config.group_members] : undefined,
   };
 }
 

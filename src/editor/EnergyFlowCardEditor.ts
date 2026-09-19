@@ -1,4 +1,4 @@
-import { CardConfig, ResolvedConfig, normalizeConfig } from '../config/CardConfig';
+import { CardConfig, DeviceGroupConfig, ResolvedConfig, normalizeConfig } from '../config/CardConfig';
 import { hassLanguage, t } from '../helpers/i18n';
 import type { ConnectionConfig } from '../models/Connection';
 import { NodeConfig, advancedFieldsFor, fieldLabelKey, generateId } from '../models/Node';
@@ -8,6 +8,28 @@ import { NODE_TYPES, NodeType, normalizeType, roleOf } from '../types/NodeType';
 
 const SELECTABLE_TYPES = NODE_TYPES.filter((type) => type !== 'home');
 const POWER_FIELDS = new Set(['power_entity', 'charge_power_entity', 'discharge_power_entity', 'production_entity']);
+const ICON_PRESETS: Array<{ value: string; key: string }> = [
+  { value: '', key: 'icon_auto' },
+  { value: 'mdi:solar-power', key: 'icon_solar' },
+  { value: 'mdi:battery', key: 'icon_battery' },
+  { value: 'mdi:heat-pump', key: 'icon_heat_pump' },
+  { value: 'mdi:air-conditioner', key: 'icon_airco' },
+  { value: 'mdi:ev-station', key: 'icon_ev' },
+  { value: 'mdi:washing-machine', key: 'icon_washing_machine' },
+  { value: 'mdi:dishwasher', key: 'icon_dishwasher' },
+  { value: 'mdi:desktop-tower', key: 'icon_pc' },
+  { value: 'mdi:server', key: 'icon_server' },
+  { value: 'mdi:lightbulb', key: 'icon_light' },
+  { value: 'mdi:pump', key: 'icon_pump' },
+  { value: 'mdi:power-socket-eu', key: 'icon_socket' },
+  { value: 'mdi:generator-portable', key: 'icon_backup' },
+  { value: 'mdi:home-battery', key: 'icon_home_battery' },
+  { value: 'mdi:water-boiler', key: 'icon_boiler' },
+  { value: 'mdi:radiator', key: 'icon_radiator' },
+  { value: 'mdi:fan', key: 'icon_fan' },
+];
+const CUSTOM_ICON = '__custom__';
+
 
 const editorStyles = `
 :host { display: block; color: var(--primary-text-color); }
@@ -104,6 +126,11 @@ export class EnergyFlowCardEditor extends HTMLElement {
   private get nodes(): NodeConfig[] {
     if (!Array.isArray(this.config.nodes)) this.config.nodes = [];
     return this.config.nodes;
+  }
+
+  private get groups(): DeviceGroupConfig[] {
+    if (!Array.isArray(this.config.groups)) this.config.groups = [];
+    return this.config.groups;
   }
 
   private ensureIds(): void {
@@ -246,6 +273,7 @@ export class EnergyFlowCardEditor extends HTMLElement {
     add.addEventListener('click', () => this.addDevice());
     wrap.append(add);
 
+    wrap.append(this.renderGroups());
     return wrap;
   }
 
@@ -283,14 +311,12 @@ export class EnergyFlowCardEditor extends HTMLElement {
       const input = this.entityInput(node[key] as string | undefined, POWER_FIELDS.has(key), (v) => this.setOrDelete(node, key, v));
       advanced.append(this.field(t(fieldLabelKey(key, type), lang), input));
     }
-    const icon = html('input', { type: 'text', placeholder: 'mdi:…', autocomplete: 'off', spellcheck: 'false' });
-    icon.value = node.icon ?? '';
-    icon.addEventListener('input', () => {
-      if (icon.value.trim()) node.icon = icon.value.trim();
+    advanced.append(this.iconPicker(node.icon, (value) => {
+      if (value) node.icon = value;
       else delete node.icon;
-    });
-    icon.addEventListener('change', () => this.setOrDelete(node, 'icon', icon.value.trim()));
-    advanced.append(this.field(t('ed_icon', lang), icon));
+      this.commit();
+      this.render();
+    }));
 
     const invert = html('input', { type: 'checkbox' });
     invert.checked = node.invert === true;
@@ -320,6 +346,98 @@ export class EnergyFlowCardEditor extends HTMLElement {
       ...(parent ? [html('div', { class: 'row' }, parent)] : []),
       html('div', { class: 'row' }, this.field(t('ed_power_entity', lang), power), remove),
       this.section(`advanced:${node.id ?? ''}`, t('ed_advanced', lang), advanced),
+    );
+  }
+
+  private iconPicker(current: string | undefined, onChange: (value: string) => void): HTMLElement {
+    const lang = this.uiLang;
+    const wrap = html('div', { class: 'stack' });
+    const select = html('select');
+    const presetValues = new Set(ICON_PRESETS.map((p) => p.value));
+    for (const preset of ICON_PRESETS) {
+      const option = html('option', { value: preset.value }, t(preset.key, lang));
+      if ((current ?? '') === preset.value) option.selected = true;
+      select.append(option);
+    }
+    const customOption = html('option', { value: CUSTOM_ICON }, t('icon_custom', lang));
+    if (current && !presetValues.has(current)) customOption.selected = true;
+    select.append(customOption);
+    wrap.append(this.field(t('ed_icon', lang), select));
+
+    if (current && !presetValues.has(current)) {
+      const custom = html('input', { type: 'text', placeholder: 'mdi:…', autocomplete: 'off', spellcheck: 'false' });
+      custom.value = current;
+      custom.addEventListener('change', () => onChange(custom.value.trim()));
+      wrap.append(this.field(t('ed_custom_icon', lang), custom));
+    }
+
+    select.addEventListener('change', () => {
+      if (select.value === CUSTOM_ICON) {
+        // Eerst alleen opnieuw tekenen; de gebruiker krijgt daarna het vrije mdi:-veld.
+        if (!current || presetValues.has(current)) onChange('mdi:');
+        return;
+      }
+      onChange(select.value);
+    });
+    return wrap;
+  }
+
+  private renderGroups(): HTMLElement {
+    const lang = this.uiLang;
+    const box = html('div', { class: 'stack' }, html('h3', {}, t('ed_groups', lang)), html('p', { class: 'hint' }, t('ed_groups_hint', lang)));
+    this.groups.forEach((group, index) => box.append(this.renderGroup(group, index)));
+    const add = html('button', { class: 'btn', type: 'button' }, `+ ${t('ed_add_group', lang)}`);
+    add.addEventListener('click', () => {
+      const name = `${t('ed_group', lang)} ${this.groups.length + 1}`;
+      this.groups.push({ id: generateId(name, new Set(this.groups.map((g) => g.id ?? ''))), name, display: 'grouped', members: [] });
+      this.commit();
+      this.render();
+    });
+    box.append(add);
+    return this.section('groups', t('ed_groups', lang), box);
+  }
+
+  private renderGroup(group: DeviceGroupConfig, index: number): HTMLElement {
+    const lang = this.uiLang;
+    const name = html('input', { type: 'text', autocomplete: 'off' });
+    name.value = group.name ?? '';
+    name.addEventListener('input', () => { group.name = name.value; });
+    name.addEventListener('change', () => { group.name = name.value.trim(); this.commit(); });
+
+    const display = html('select');
+    display.append(
+      html('option', { value: 'grouped' }, t('ed_grouped', lang)),
+      html('option', { value: 'individual' }, t('ed_individual', lang)),
+    );
+    display.value = group.display === 'individual' ? 'individual' : 'grouped';
+    display.addEventListener('change', () => { group.display = display.value as 'grouped' | 'individual'; this.commit(); this.render(); });
+
+    const remove = html('button', { class: 'btn danger', type: 'button' }, t('ed_remove', lang));
+    remove.addEventListener('click', () => { this.groups.splice(index, 1); if (!this.groups.length) delete this.config.groups; this.commit(); this.render(); });
+
+    const members = html('div', { class: 'stack' });
+    const selected = new Set(group.members ?? []);
+    const candidates = this.nodes.filter((n) => normalizeType(n.type) !== 'home' && normalizeType(n.type) !== 'backup');
+    for (const node of candidates) {
+      const id = node.id ?? '';
+      const cb = html('input', { type: 'checkbox' });
+      cb.checked = selected.has(id) || (!!node.name && selected.has(node.name));
+      cb.addEventListener('change', () => {
+        const set = new Set((group.members ?? []).map(String));
+        if (cb.checked) set.add(id); else { set.delete(id); if (node.name) set.delete(node.name); }
+        group.members = [...set].filter(Boolean);
+        this.commit();
+      });
+      members.append(html('label', { class: 'check' }, cb, node.name || id));
+    }
+
+    const icon = this.iconPicker(group.icon, (value) => { group.icon = value || undefined; this.commit(); this.render(); });
+    return html(
+      'div', { class: 'device' },
+      html('div', { class: 'row' }, this.field(t('ed_group_name', lang), name), this.field(t('ed_group_display', lang), display)),
+      this.field(t('ed_group_members', lang), members),
+      icon,
+      remove,
     );
   }
 

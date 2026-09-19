@@ -7,6 +7,27 @@ import type { PowerFormat } from '../helpers/stateHelper';
 import { NODE_TYPES, normalizeType } from '../types/NodeType';
 import type { NodeType } from '../types/NodeType';
 
+
+export interface DeviceGroupConfig {
+  id?: string;
+  name: string;
+  icon?: string;
+  /** grouped = één totaalnode tonen; individual = leden los laten staan. */
+  display?: 'grouped' | 'individual';
+  /** Node-id of naam van ieder groepslid. */
+  members: string[];
+}
+
+export interface ResolvedDeviceGroup {
+  id: string;
+  name: string;
+  icon?: string;
+  display: 'grouped' | 'individual';
+  memberIds: string[];
+  type: NodeType;
+  parentId: string;
+}
+
 /** De configuratie zoals de gebruiker die in YAML schrijft. */
 export interface CardConfig {
   type: string;
@@ -19,6 +40,8 @@ export interface CardConfig {
   /** Optionele echte vermogenssensor voor de Woning-node. Zonder deze sensor wordt Woning berekend. */
   home_power_entity?: string;
   nodes?: NodeConfig[];
+  /** Optionele weergavegroepen. De apparaten blijven echte nodes; alleen de presentatie wordt gegroepeerd. */
+  groups?: DeviceGroupConfig[];
   connections?: ConnectionConfig[];
   layout?: { mode?: 'flow' | 'circle' | 'straight' | 'auto' | 'eniris'; positions?: Record<string, Point> };
 }
@@ -39,6 +62,7 @@ export interface ResolvedConfig {
   maxPower: number;
   animationSpeed: number;
   nodes: EnergyNode[];
+  groups: ResolvedDeviceGroup[];
   connections: Connection[];
   layout: LayoutConfig;
 }
@@ -92,6 +116,7 @@ export function normalizeConfig(raw: unknown): ResolvedConfig {
   }
   checkConnectedTo(nodes);
   const connections = parseConnections(raw.connections, nodes);
+  const groups = parseGroups(raw.groups, nodes, connections);
   const layout = parseLayout(raw.layout);
 
   const powerFormat = (raw.power_format ?? 'w') as PowerFormat;
@@ -107,6 +132,7 @@ export function normalizeConfig(raw: unknown): ResolvedConfig {
     maxPower: positiveNumber(raw.max_power, 5000, 'max_power'),
     animationSpeed: positiveNumber(raw.animation_speed, 1, 'animation_speed'),
     nodes,
+    groups,
     connections,
     layout,
   };
@@ -194,6 +220,63 @@ function parseConnections(raw: unknown, nodes: EnergyNode[]): Connection[] {
     const id = generateId(typeof item.id === 'string' && item.id ? item.id : `${from.id}__${to.id}`, taken);
     taken.add(id);
     return createConnection(id, from, to, item as unknown as ConnectionConfig);
+  });
+}
+
+function parseGroups(raw: unknown, nodes: EnergyNode[], connections: Connection[]): ResolvedDeviceGroup[] {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) throw new ConfigError('"groups" moet een lijst zijn.');
+  const byRef = (ref: string): EnergyNode | undefined => {
+    const lower = ref.trim().toLowerCase();
+    return nodes.find((n) => n.id === ref.trim()) ?? nodes.find((n) => n.name?.toLowerCase() === lower);
+  };
+  const parentOfMember = (node: EnergyNode): string => {
+    if (node.role !== 'consumer' || node.type === 'backup') return 'home';
+    for (const c of connections) {
+      const otherId = c.from === node.id ? c.to : c.to === node.id ? c.from : null;
+      const other = otherId ? nodes.find((n) => n.id === otherId) : undefined;
+      if (other?.type === 'backup') return other.id;
+    }
+    return 'home';
+  };
+  const used = new Set<string>();
+  const groupIds = new Set<string>();
+  return raw.map((item, index) => {
+    if (!isRecord(item)) throw new ConfigError(`Groep ${index + 1} is geen geldig object.`);
+    const name = typeof item.name === 'string' ? item.name.trim() : '';
+    if (!name) throw new ConfigError(`Groep ${index + 1} heeft een "name" nodig.`);
+    const memberRefs = Array.isArray(item.members) ? item.members.filter((v): v is string => typeof v === 'string' && !!v.trim()) : [];
+    if (memberRefs.length < 2) throw new ConfigError(`Groep "${name}" heeft minimaal twee apparaten nodig.`);
+    const members = memberRefs.map((ref) => {
+      const found = byRef(ref);
+      if (!found || found.role === 'home' || found.type === 'backup') throw new ConfigError(`Groep "${name}": apparaat "${ref}" bestaat niet of kan niet gegroepeerd worden.`);
+      return found;
+    });
+    const role = members[0]!.role;
+    if (members.some((m) => m.role !== role)) throw new ConfigError(`Groep "${name}" mag geen verschillende energierollen mengen.`);
+    const parentId = parentOfMember(members[0]!);
+    if (members.some((m) => parentOfMember(m) !== parentId)) throw new ConfigError(`Groep "${name}" bevat apparaten met verschillende aansluitpunten.`);
+    const display = item.display === 'individual' ? 'individual' : 'grouped';
+    if (display === 'grouped') {
+      for (const member of members) {
+        if (used.has(member.id)) throw new ConfigError(`Apparaat "${member.name ?? member.id}" staat in meer dan één zichtbare groep.`);
+        used.add(member.id);
+      }
+    }
+    let id = typeof item.id === 'string' && item.id.trim() ? item.id.trim() : generateId(name, groupIds);
+    if (groupIds.has(id)) id = generateId(id, groupIds);
+    groupIds.add(id);
+    const sameType = members.every((m) => m.type === members[0]!.type);
+    const type: NodeType = sameType ? members[0]!.type : role === 'consumer' ? 'consumer' : members[0]!.type;
+    return {
+      id,
+      name,
+      icon: typeof item.icon === 'string' && item.icon.trim() ? item.icon.trim() : undefined,
+      display,
+      memberIds: members.map((m) => m.id),
+      type,
+      parentId,
+    };
   });
 }
 

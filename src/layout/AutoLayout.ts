@@ -257,78 +257,73 @@ function flowLayout(nodes: readonly EnergyNode[], auto: readonly EnergyNode[], l
     else direct.push(device);
   }
 
-  /*
-   * v0.8: de Flow-weergave is inhoudsgestuurd in plaats van een vaste canvasmaat.
-   * - maximaal vijf verbruikerslots per rij;
-   * - extra apparaten gaan automatisch naar een volgende rij;
-   * - de kaart wordt na plaatsing strak om de nodes heen getrokken;
-   * - boven en onder blijft hooguit een vaste, rustige buitenmarge over.
-   */
   const COL = 126;
   const SIDE_NODE_X = 78;
   const TOP_Y = 76;
   const SOURCE_TO_HOME = 150;
   const HOME_TO_FIRST_ROW = 150;
   const ROW_GAP = 146;
-  const BACKUP_CHILD_GAP = 142;
+  const BACKUP_ROW_GAP = 108;
   const MAX_ROW_SLOTS = 5;
+  const MAX_BACKUP_COLS = 3;
   const MIN_WIDTH = 520;
   const H_MARGIN = 72;
   const V_MARGIN = 26;
   const LABEL_BOTTOM = 44;
   const LABEL_TOP = 24;
   const SIDE_LABEL = 74;
+  const REGION_GAP = 96;
 
-  // v0.8.1: gewone verbruikers en backup-takken krijgen ieder hun eigen gebied.
-  // Daardoor kan de lijn naar een backup nooit meer dwars door gewone verbruikers lopen.
   const directRows: EnergyNode[][] = [];
   for (let i = 0; i < direct.length; i += MAX_ROW_SLOTS) directRows.push(direct.slice(i, i + MAX_ROW_SLOTS));
-
   const directMax = Math.max(0, ...directRows.map((row) => row.length));
-  const backupColumns = backups.length;
-  const topSlots = Math.max(1, producers.length);
-  const lowerSlots = Math.max(3, directMax + (backupColumns > 0 ? backupColumns + 1 : 0));
-  const contentSlots = Math.max(3, topSlots, lowerSlots);
-  let width = Math.max(MIN_WIDTH, contentSlots * COL + 2 * 138);
+  const directWidth = directMax > 0 ? Math.max(COL, directMax * COL) : 0;
+
+  const backupMeta = backups.map((backup) => {
+    const children = behind.get(backup.id) ?? [];
+    const cols = Math.max(1, Math.min(MAX_BACKUP_COLS, children.length || 1));
+    const rows = Math.max(1, Math.ceil(children.length / cols));
+    return { backup, children, cols, rows, width: Math.max(COL, cols * COL) };
+  });
+  const backupWidth = backupMeta.reduce((sum, item) => sum + item.width, 0) + Math.max(0, backupMeta.length - 1) * REGION_GAP;
+  const lowerWidth = directWidth + (directWidth && backupWidth ? REGION_GAP : 0) + backupWidth;
+  const topWidth = Math.max(1, producers.length) * COL;
+  let width = Math.max(MIN_WIDTH, lowerWidth + 2 * H_MARGIN, topWidth + 2 * H_MARGIN + 80);
   const centerX = width / 2;
   const homeY = producers.length > 0 ? TOP_Y + SOURCE_TO_HOME : TOP_Y + 58;
-
   if (home) pts.set(home.id, { x: centerX, y: homeY });
 
-  // Productie boven Home, horizontaal verdeeld.
   producers.forEach((n, i) => pts.set(n.id, { x: centerX + (i - (producers.length - 1) / 2) * COL, y: TOP_Y }));
-
-  // Net links en opslag rechts, verticaal rond Home bij meerdere exemplaren.
   const sideY = (i: number, count: number) => homeY + (i - (count - 1) / 2) * 108;
   grids.forEach((n, i) => pts.set(n.id, { x: SIDE_NODE_X, y: sideY(i, grids.length) }));
   batteries.forEach((n, i) => pts.set(n.id, { x: width - SIDE_NODE_X, y: sideY(i, batteries.length) }));
 
   const firstRowY = homeY + HOME_TO_FIRST_ROW;
+  let cursor = (width - lowerWidth) / 2;
 
-  // Gewone verbruikers: maximaal vijf per rij en daarna automatisch wrappen.
-  // Als er backups zijn, schuift dit raster iets naar links zodat rechts een vrij backup-pad ontstaat.
-  const consumerShift = backupColumns > 0 ? -0.55 * COL : 0;
-  directRows.forEach((row, rowIndex) => {
-    const rowY = firstRowY + rowIndex * ROW_GAP;
-    row.forEach((node, i) => {
-      const x = centerX + consumerShift + (i - (row.length - 1) / 2) * COL;
-      pts.set(node.id, { x, y: rowY });
+  if (directWidth > 0) {
+    const directCenter = cursor + directWidth / 2;
+    directRows.forEach((row, rowIndex) => {
+      const y = firstRowY + rowIndex * ROW_GAP;
+      row.forEach((node, i) => pts.set(node.id, { x: directCenter + (i - (row.length - 1) / 2) * COL, y }));
     });
-  });
+    cursor += directWidth + (backupWidth ? REGION_GAP : 0);
+  }
 
-  // Backup-takken krijgen rechts een eigen kolom. De apparaten achter een backup worden
-  // onder elkaar gestapeld. Zo blijft de hele tak leesbaar en kruist hij geen gewone nodes.
-  const backupBaseX = centerX + Math.max(1.55 * COL, ((Math.max(1, directMax) - 1) / 2 + 1.25) * COL);
-  backups.forEach((backup, backupIndex) => {
-    const x = backupBaseX + backupIndex * 1.35 * COL;
-    pts.set(backup.id, { x, y: firstRowY });
-    const children = behind.get(backup.id) ?? [];
-    children.forEach((child, childIndex) => {
-      pts.set(child.id, { x, y: firstRowY + (childIndex + 1) * BACKUP_CHILD_GAP });
+  for (const item of backupMeta) {
+    const clusterCenter = cursor + item.width / 2;
+    pts.set(item.backup.id, { x: clusterCenter, y: firstRowY });
+    item.children.forEach((child, i) => {
+      const row = Math.floor(i / item.cols);
+      const col = i % item.cols;
+      const countThisRow = Math.min(item.cols, item.children.length - row * item.cols);
+      const x = clusterCenter + (col - (countThisRow - 1) / 2) * COL;
+      const y = firstRowY + (row + 1) * BACKUP_ROW_GAP;
+      pts.set(child.id, { x, y });
     });
-  });
+    cursor += item.width + REGION_GAP;
+  }
 
-  // Trek de SVG strak om de werkelijke inhoud. Hiermee verdwijnt de grote lege onderkant.
   let minX = Infinity;
   let maxX = -Infinity;
   let minY = Infinity;
@@ -343,11 +338,9 @@ function flowLayout(nodes: readonly EnergyNode[], auto: readonly EnergyNode[], l
   }
   if (!Number.isFinite(minX)) return { width: MIN_WIDTH, height: 220, positions: new Map() };
 
-  // Houd Home visueel in het midden van de horizontale ruimte, maar verspil verticaal geen hoogte.
   const horizontalHalf = Math.max(centerX - minX, maxX - centerX);
   minX = centerX - horizontalHalf;
   maxX = centerX + horizontalHalf;
-
   const fittedWidth = Math.max(MIN_WIDTH, maxX - minX + 2 * H_MARGIN);
   const fittedHeight = Math.max(260, maxY - minY + 2 * V_MARGIN);
   const dx = (fittedWidth - (maxX - minX)) / 2 - minX;

@@ -1,4 +1,4 @@
-// Energy Flow Card v0.8.1
+// Energy Flow Card v0.8.2
 (() => {
 const __modules = Object.create(null);
 __modules["src/card/EnergyFlowCard.ts"] = function(require, module, exports) {
@@ -11,6 +11,7 @@ const DemoEngine_1 = require("../demo/DemoEngine");
 const flowHelper_1 = require("../helpers/flowHelper");
 const historyHelper_1 = require("../helpers/historyHelper");
 const i18n_1 = require("../helpers/i18n");
+const groupHelper_1 = require("../helpers/groupHelper");
 const stateHelper_1 = require("../helpers/stateHelper");
 const AutoLayout_1 = require("../layout/AutoLayout");
 const Node_1 = require("../models/Node");
@@ -30,6 +31,9 @@ class EnergyFlowCard extends HTMLElement {
     constructor() {
         super();
         this.nodeEls = new Map();
+        this.displayNodes = [];
+        this.displayConnections = [];
+        this.groupNodes = new Map();
         this.connEls = [];
         this.popup = new PopupRenderer_1.Popup(() => this.closePopup());
         this.history = new Map();
@@ -103,6 +107,10 @@ class EnergyFlowCard extends HTMLElement {
         const root = this.shadowRoot;
         this.nodeEls.clear();
         this.connEls = [];
+        const display = cfg ? (0, groupHelper_1.buildDisplayGraph)(cfg) : undefined;
+        this.displayNodes = display?.nodes ?? [];
+        this.displayConnections = display?.connections ?? [];
+        this.groupNodes = display?.groupNodes ?? new Map();
         const card = (0, dom_1.html)('ha-card', { class: customElements.get('ha-card') ? '' : 'fallback' });
         if (cfg?.title)
             card.append((0, dom_1.html)('div', { class: 'title' }, cfg.title));
@@ -120,17 +128,19 @@ class EnergyFlowCard extends HTMLElement {
         root.replaceChildren((0, dom_1.html)('style', {}, styles_1.styles), card);
     }
     buildFlowSvg(cfg) {
-        const layout = (0, AutoLayout_1.computeLayout)(cfg.nodes, cfg.layout, cfg.connections);
+        const nodes = this.displayNodes.length ? this.displayNodes : cfg.nodes;
+        const connections = this.displayConnections.length ? this.displayConnections : cfg.connections;
+        const layout = (0, AutoLayout_1.computeLayout)(nodes, cfg.layout, connections);
         const straight = layout.mode !== 'circle';
-        const byId = new Map(cfg.nodes.map((n) => [n.id, n]));
-        const homeNode = cfg.nodes.find((n) => n.role === 'home');
+        const byId = new Map(nodes.map((n) => [n.id, n]));
+        const homeNode = nodes.find((n) => n.role === 'home');
         const homeY = (homeNode && layout.positions.get(homeNode.id)?.y) ?? layout.height / 2;
         const radiusOf = (n) => (n.role === 'home' ? AutoLayout_1.HOME_RADIUS : AutoLayout_1.NODE_RADIUS);
         const root = (0, dom_1.svg)('svg', { class: `flow layout-${layout.mode}`, viewBox: `0 0 ${layout.width} ${layout.height}`, role: 'group' });
         const connLayer = (0, dom_1.svg)('g', { class: 'connections' });
         const nodeLayer = (0, dom_1.svg)('g', { class: 'nodes' });
         root.append(connLayer, nodeLayer);
-        for (const conn of cfg.connections) {
+        for (const conn of connections) {
             const from = byId.get(conn.from);
             const to = byId.get(conn.to);
             const a = from && layout.positions.get(from.id);
@@ -149,7 +159,7 @@ class EnergyFlowCard extends HTMLElement {
             this.connEls.push({ conn, el });
             connLayer.append(el.el);
         }
-        for (const node of cfg.nodes) {
+        for (const node of nodes) {
             const pos = layout.positions.get(node.id);
             if (!pos)
                 continue;
@@ -164,26 +174,30 @@ class EnergyFlowCard extends HTMLElement {
         const cfg = this.config;
         const readings = new Map();
         let flows;
+        let sourceFlows;
         if (cfg.demo) {
             const tSeconds = DEMO_OFFSET_S + (performance.now() - this.demoStart) / 1000;
             for (const [id, r] of (0, DemoEngine_1.demoReadings)(cfg.nodes, tSeconds))
                 readings.set(id, r);
             (0, flowHelper_1.applyBackupReadings)(cfg.nodes, cfg.connections, readings, true);
-            flows = (0, flowHelper_1.computeFlows)(cfg.nodes, cfg.connections, readings, undefined, { ignoreEntities: true });
+            sourceFlows = (0, flowHelper_1.computeFlows)(cfg.nodes, cfg.connections, readings, undefined, { ignoreEntities: true });
         }
         else {
             for (const node of cfg.nodes)
                 if (node.role !== 'home')
                     readings.set(node.id, (0, flowHelper_1.readNode)(node, this._hass));
             (0, flowHelper_1.applyBackupReadings)(cfg.nodes, cfg.connections, readings, false);
-            flows = (0, flowHelper_1.computeFlows)(cfg.nodes, cfg.connections, readings, this._hass);
+            sourceFlows = (0, flowHelper_1.computeFlows)(cfg.nodes, cfg.connections, readings, this._hass);
         }
         const home = cfg.nodes.find((n) => n.role === 'home');
         if (home) {
-            // Een expliciete woningsensor heeft voorrang. Zonder sensor blijft Woning automatisch berekend.
             const measuredHome = !cfg.demo && !!home.config.power_entity;
-            readings.set(home.id, measuredHome ? (0, flowHelper_1.readNode)(home, this._hass) : (0, flowHelper_1.computeHomeReading)(home, cfg.nodes, cfg.connections, flows));
+            readings.set(home.id, measuredHome ? (0, flowHelper_1.readNode)(home, this._hass) : (0, flowHelper_1.computeHomeReading)(home, cfg.nodes, cfg.connections, sourceFlows));
         }
+        (0, groupHelper_1.applyGroupReadings)(cfg.groups, this.groupNodes, readings);
+        const displayNodes = this.displayNodes.length ? this.displayNodes : cfg.nodes;
+        const displayConnections = this.displayConnections.length ? this.displayConnections : cfg.connections;
+        flows = (0, flowHelper_1.computeFlows)(displayNodes, displayConnections, readings, cfg.demo ? undefined : this._hass, { ignoreEntities: cfg.demo });
         return { readings, flows };
     }
     flowContext() {
@@ -202,7 +216,7 @@ class EnergyFlowCard extends HTMLElement {
             return;
         this.computed = this.compute();
         const ctx = { powerFormat: cfg.powerFormat, language: this.language };
-        for (const node of cfg.nodes) {
+        for (const node of (this.displayNodes.length ? this.displayNodes : cfg.nodes)) {
             const reading = this.computed.readings.get(node.id);
             if (reading)
                 this.nodeEls.get(node.id)?.update((0, NodeRenderer_1.describeNode)(node, reading, ctx));
@@ -257,7 +271,7 @@ class EnergyFlowCard extends HTMLElement {
     }
     popupModel(nodeId) {
         const cfg = this.config;
-        const node = cfg?.nodes.find((n) => n.id === nodeId);
+        const node = (this.displayNodes.length ? this.displayNodes : cfg?.nodes ?? []).find((n) => n.id === nodeId);
         const reading = this.computed?.readings.get(nodeId);
         if (!cfg || !node || !reading)
             return undefined;
@@ -266,7 +280,17 @@ class EnergyFlowCard extends HTMLElement {
         const rows = [];
         if (reading.soc)
             rows.push({ label: (0, i18n_1.t)('soc', lang), value: view.socText ?? '?' });
-        if (!cfg.demo) {
+        if (node.groupMembers?.length) {
+            for (const memberId of node.groupMembers) {
+                const member = cfg.nodes.find((n) => n.id === memberId);
+                const memberReading = this.computed?.readings.get(memberId);
+                if (!member)
+                    continue;
+                const value = memberReading?.watts === null || memberReading?.watts === undefined ? '?' : (0, stateHelper_1.formatPower)(memberReading.watts, cfg.powerFormat);
+                rows.push({ label: member.name ?? member.id, value });
+            }
+        }
+        if (!cfg.demo && !node.groupMembers?.length) {
             for (const field of (0, Node_1.advancedFieldsFor)(node.type)) {
                 if (field === 'soc_entity')
                     continue;
@@ -284,7 +308,7 @@ class EnergyFlowCard extends HTMLElement {
         }
         const powerEntity = node.config.power_entity ?? node.config.production_entity;
         const computedHome = node.role === 'home' && !node.config.power_entity;
-        const history = cfg.demo || powerEntity || computedHome || node.type === 'backup'
+        const history = cfg.demo || powerEntity || computedHome || node.type === 'backup' || !!node.groupMembers?.length
             ? (this.history.get(nodeId)?.state ?? { kind: 'loading' })
             : { kind: 'none' };
         if (history.kind === 'ready' && history.points.length > 0) {
@@ -300,14 +324,14 @@ class EnergyFlowCard extends HTMLElement {
             status: view.status,
             rows,
             history,
-            note: node.role === 'home' ? (0, i18n_1.t)(computedHome ? 'home_computed' : 'home_measured', lang) : undefined,
+            note: node.groupMembers?.length ? `${(0, i18n_1.t)('group_total_of', lang)} ${node.groupMembers.length}` : node.role === 'home' ? (0, i18n_1.t)(computedHome ? 'home_computed' : 'home_measured', lang) : undefined,
             powerFormat: cfg.powerFormat,
             language: lang,
         };
     }
     async ensureHistory(nodeId) {
         const cfg = this.config;
-        const node = cfg?.nodes.find((n) => n.id === nodeId);
+        const node = (this.displayNodes.length ? this.displayNodes : cfg?.nodes ?? []).find((n) => n.id === nodeId);
         if (!cfg || !node)
             return;
         const cached = this.history.get(nodeId);
@@ -373,7 +397,7 @@ class EnergyFlowCard extends HTMLElement {
             return;
         const entityIds = this.historyEntityIds();
         if (entityIds.length === 0) {
-            for (const node of cfg.nodes)
+            for (const node of (this.displayNodes.length ? this.displayNodes : cfg.nodes))
                 this.storeHistory(node, { kind: 'none' });
             this.historyBundleFetchedAt = Date.now();
             return;
@@ -388,7 +412,8 @@ class EnergyFlowCard extends HTMLElement {
                 const points = (0, historyHelper_1.bucketize)(raw.get(id) ?? [], start, end, HISTORY_BUCKETS);
                 series.set(id, new Map(points.map((p) => [p.t, p.v])));
             }
-            const perNode = new Map(cfg.nodes.map((n) => [n.id, []]));
+            const historyNodes = this.displayNodes.length ? this.displayNodes : cfg.nodes;
+            const perNode = new Map(historyNodes.map((n) => [n.id, []]));
             for (const time of timeline) {
                 const states = {};
                 for (const id of entityIds) {
@@ -409,14 +434,15 @@ class EnergyFlowCard extends HTMLElement {
                     const measured = !!home.config.power_entity;
                     readings.set(home.id, measured ? (0, flowHelper_1.readNode)(home, historicalHass) : (0, flowHelper_1.computeHomeReading)(home, cfg.nodes, cfg.connections, flows));
                 }
-                for (const node of cfg.nodes) {
+                (0, groupHelper_1.applyGroupReadings)(cfg.groups, this.groupNodes, readings);
+                for (const node of historyNodes) {
                     const watts = readings.get(node.id)?.watts;
                     if (typeof watts === 'number')
                         perNode.get(node.id)?.push({ t: time, v: watts });
                 }
             }
             const fetchedAt = Date.now();
-            for (const node of cfg.nodes) {
+            for (const node of historyNodes) {
                 const points = perNode.get(node.id) ?? [];
                 this.storeHistory(node, points.length >= 2 ? { kind: 'ready', points, start, end } : { kind: 'none' }, fetchedAt);
             }
@@ -469,7 +495,8 @@ class EnergyFlowCard extends HTMLElement {
         const cfg = this.config;
         if (!cfg)
             return;
-        for (const node of cfg.nodes) {
+        const nodes = [...cfg.nodes, ...this.groupNodes.values()];
+        for (const node of nodes) {
             const current = this.history.get(node.id);
             if (current && Date.now() - current.fetchedAt < HISTORY_TTL_MS)
                 continue;
@@ -496,6 +523,7 @@ class EnergyFlowCard extends HTMLElement {
         const signature = cfg.nodes
             .map((n) => [n.id, n.config.power_entity, n.config.production_entity, n.config.charge_power_entity, n.config.discharge_power_entity, n.invert])
             .concat(cfg.connections.map((c) => [c.id, c.from, c.to, c.entity, c.invert]))
+            .concat(cfg.groups.map((g) => [g.id, g.display, g.name, g.icon, ...g.memberIds]))
             .map((x) => x.join(':'))
             .join('|');
         let hash = 2166136261;
@@ -548,6 +576,7 @@ class EnergyFlowCard extends HTMLElement {
             const tSeconds = nowT - 240 + (240 * i) / (samples - 1);
             const readings = (0, DemoEngine_1.demoReadings)(cfg.nodes, tSeconds);
             (0, flowHelper_1.applyBackupReadings)(cfg.nodes, cfg.connections, readings, true);
+            (0, groupHelper_1.applyGroupReadings)(cfg.groups, this.groupNodes, readings);
             let watts;
             if (node.role === 'home' && home) {
                 const flows = (0, flowHelper_1.computeFlows)(cfg.nodes, cfg.connections, readings, undefined, { ignoreEntities: true });
@@ -783,6 +812,7 @@ function normalizeConfig(raw) {
     }
     checkConnectedTo(nodes);
     const connections = parseConnections(raw.connections, nodes);
+    const groups = parseGroups(raw.groups, nodes, connections);
     const layout = parseLayout(raw.layout);
     const powerFormat = (raw.power_format ?? 'w');
     if (powerFormat !== 'w' && powerFormat !== 'kw' && powerFormat !== 'auto') {
@@ -796,6 +826,7 @@ function normalizeConfig(raw) {
         maxPower: positiveNumber(raw.max_power, 5000, 'max_power'),
         animationSpeed: positiveNumber(raw.animation_speed, 1, 'animation_speed'),
         nodes,
+        groups,
         connections,
         layout,
     };
@@ -891,6 +922,74 @@ function parseConnections(raw, nodes) {
         const id = (0, Node_1.generateId)(typeof item.id === 'string' && item.id ? item.id : `${from.id}__${to.id}`, taken);
         taken.add(id);
         return (0, Connection_1.createConnection)(id, from, to, item);
+    });
+}
+function parseGroups(raw, nodes, connections) {
+    if (raw === undefined || raw === null)
+        return [];
+    if (!Array.isArray(raw))
+        throw new ConfigError('"groups" moet een lijst zijn.');
+    const byRef = (ref) => {
+        const lower = ref.trim().toLowerCase();
+        return nodes.find((n) => n.id === ref.trim()) ?? nodes.find((n) => n.name?.toLowerCase() === lower);
+    };
+    const parentOfMember = (node) => {
+        if (node.role !== 'consumer' || node.type === 'backup')
+            return 'home';
+        for (const c of connections) {
+            const otherId = c.from === node.id ? c.to : c.to === node.id ? c.from : null;
+            const other = otherId ? nodes.find((n) => n.id === otherId) : undefined;
+            if (other?.type === 'backup')
+                return other.id;
+        }
+        return 'home';
+    };
+    const used = new Set();
+    const groupIds = new Set();
+    return raw.map((item, index) => {
+        if (!isRecord(item))
+            throw new ConfigError(`Groep ${index + 1} is geen geldig object.`);
+        const name = typeof item.name === 'string' ? item.name.trim() : '';
+        if (!name)
+            throw new ConfigError(`Groep ${index + 1} heeft een "name" nodig.`);
+        const memberRefs = Array.isArray(item.members) ? item.members.filter((v) => typeof v === 'string' && !!v.trim()) : [];
+        if (memberRefs.length < 2)
+            throw new ConfigError(`Groep "${name}" heeft minimaal twee apparaten nodig.`);
+        const members = memberRefs.map((ref) => {
+            const found = byRef(ref);
+            if (!found || found.role === 'home' || found.type === 'backup')
+                throw new ConfigError(`Groep "${name}": apparaat "${ref}" bestaat niet of kan niet gegroepeerd worden.`);
+            return found;
+        });
+        const role = members[0].role;
+        if (members.some((m) => m.role !== role))
+            throw new ConfigError(`Groep "${name}" mag geen verschillende energierollen mengen.`);
+        const parentId = parentOfMember(members[0]);
+        if (members.some((m) => parentOfMember(m) !== parentId))
+            throw new ConfigError(`Groep "${name}" bevat apparaten met verschillende aansluitpunten.`);
+        const display = item.display === 'individual' ? 'individual' : 'grouped';
+        if (display === 'grouped') {
+            for (const member of members) {
+                if (used.has(member.id))
+                    throw new ConfigError(`Apparaat "${member.name ?? member.id}" staat in meer dan één zichtbare groep.`);
+                used.add(member.id);
+            }
+        }
+        let id = typeof item.id === 'string' && item.id.trim() ? item.id.trim() : (0, Node_1.generateId)(name, groupIds);
+        if (groupIds.has(id))
+            id = (0, Node_1.generateId)(id, groupIds);
+        groupIds.add(id);
+        const sameType = members.every((m) => m.type === members[0].type);
+        const type = sameType ? members[0].type : role === 'consumer' ? 'consumer' : members[0].type;
+        return {
+            id,
+            name,
+            icon: typeof item.icon === 'string' && item.icon.trim() ? item.icon.trim() : undefined,
+            display,
+            memberIds: members.map((m) => m.id),
+            type,
+            parentId,
+        };
     });
 }
 function parseLayout(raw) {
@@ -1034,6 +1133,27 @@ const dom_1 = require("../renderer/dom");
 const NodeType_1 = require("../types/NodeType");
 const SELECTABLE_TYPES = NodeType_1.NODE_TYPES.filter((type) => type !== 'home');
 const POWER_FIELDS = new Set(['power_entity', 'charge_power_entity', 'discharge_power_entity', 'production_entity']);
+const ICON_PRESETS = [
+    { value: '', key: 'icon_auto' },
+    { value: 'mdi:solar-power', key: 'icon_solar' },
+    { value: 'mdi:battery', key: 'icon_battery' },
+    { value: 'mdi:heat-pump', key: 'icon_heat_pump' },
+    { value: 'mdi:air-conditioner', key: 'icon_airco' },
+    { value: 'mdi:ev-station', key: 'icon_ev' },
+    { value: 'mdi:washing-machine', key: 'icon_washing_machine' },
+    { value: 'mdi:dishwasher', key: 'icon_dishwasher' },
+    { value: 'mdi:desktop-tower', key: 'icon_pc' },
+    { value: 'mdi:server', key: 'icon_server' },
+    { value: 'mdi:lightbulb', key: 'icon_light' },
+    { value: 'mdi:pump', key: 'icon_pump' },
+    { value: 'mdi:power-socket-eu', key: 'icon_socket' },
+    { value: 'mdi:generator-portable', key: 'icon_backup' },
+    { value: 'mdi:home-battery', key: 'icon_home_battery' },
+    { value: 'mdi:water-boiler', key: 'icon_boiler' },
+    { value: 'mdi:radiator', key: 'icon_radiator' },
+    { value: 'mdi:fan', key: 'icon_fan' },
+];
+const CUSTOM_ICON = '__custom__';
 const editorStyles = `
 :host { display: block; color: var(--primary-text-color); }
 .wizard { display: flex; flex-direction: column; gap: 16px; }
@@ -1119,6 +1239,11 @@ class EnergyFlowCardEditor extends HTMLElement {
         if (!Array.isArray(this.config.nodes))
             this.config.nodes = [];
         return this.config.nodes;
+    }
+    get groups() {
+        if (!Array.isArray(this.config.groups))
+            this.config.groups = [];
+        return this.config.groups;
     }
     ensureIds() {
         const taken = new Set(['home']);
@@ -1251,6 +1376,7 @@ class EnergyFlowCardEditor extends HTMLElement {
         const add = (0, dom_1.html)('button', { class: 'btn primary', type: 'button' }, `+ ${(0, i18n_1.t)('ed_add_device', lang)}`);
         add.addEventListener('click', () => this.addDevice());
         wrap.append(add);
+        wrap.append(this.renderGroups());
         return wrap;
     }
     renderDevice(node) {
@@ -1284,16 +1410,14 @@ class EnergyFlowCardEditor extends HTMLElement {
             const input = this.entityInput(node[key], POWER_FIELDS.has(key), (v) => this.setOrDelete(node, key, v));
             advanced.append(this.field((0, i18n_1.t)((0, Node_1.fieldLabelKey)(key, type), lang), input));
         }
-        const icon = (0, dom_1.html)('input', { type: 'text', placeholder: 'mdi:…', autocomplete: 'off', spellcheck: 'false' });
-        icon.value = node.icon ?? '';
-        icon.addEventListener('input', () => {
-            if (icon.value.trim())
-                node.icon = icon.value.trim();
+        advanced.append(this.iconPicker(node.icon, (value) => {
+            if (value)
+                node.icon = value;
             else
                 delete node.icon;
-        });
-        icon.addEventListener('change', () => this.setOrDelete(node, 'icon', icon.value.trim()));
-        advanced.append(this.field((0, i18n_1.t)('ed_icon', lang), icon));
+            this.commit();
+            this.render();
+        }));
         const invert = (0, dom_1.html)('input', { type: 'checkbox' });
         invert.checked = node.invert === true;
         invert.addEventListener('change', () => {
@@ -1317,6 +1441,90 @@ class EnergyFlowCardEditor extends HTMLElement {
             parent = this.field((0, i18n_1.t)('ed_connected_to', lang), parentSelect);
         }
         return (0, dom_1.html)('div', { class: 'device' }, (0, dom_1.html)('div', { class: 'row' }, this.field((0, i18n_1.t)('ed_name', lang), name), this.field((0, i18n_1.t)('ed_type', lang), select)), ...(parent ? [(0, dom_1.html)('div', { class: 'row' }, parent)] : []), (0, dom_1.html)('div', { class: 'row' }, this.field((0, i18n_1.t)('ed_power_entity', lang), power), remove), this.section(`advanced:${node.id ?? ''}`, (0, i18n_1.t)('ed_advanced', lang), advanced));
+    }
+    iconPicker(current, onChange) {
+        const lang = this.uiLang;
+        const wrap = (0, dom_1.html)('div', { class: 'stack' });
+        const select = (0, dom_1.html)('select');
+        const presetValues = new Set(ICON_PRESETS.map((p) => p.value));
+        for (const preset of ICON_PRESETS) {
+            const option = (0, dom_1.html)('option', { value: preset.value }, (0, i18n_1.t)(preset.key, lang));
+            if ((current ?? '') === preset.value)
+                option.selected = true;
+            select.append(option);
+        }
+        const customOption = (0, dom_1.html)('option', { value: CUSTOM_ICON }, (0, i18n_1.t)('icon_custom', lang));
+        if (current && !presetValues.has(current))
+            customOption.selected = true;
+        select.append(customOption);
+        wrap.append(this.field((0, i18n_1.t)('ed_icon', lang), select));
+        if (current && !presetValues.has(current)) {
+            const custom = (0, dom_1.html)('input', { type: 'text', placeholder: 'mdi:…', autocomplete: 'off', spellcheck: 'false' });
+            custom.value = current;
+            custom.addEventListener('change', () => onChange(custom.value.trim()));
+            wrap.append(this.field((0, i18n_1.t)('ed_custom_icon', lang), custom));
+        }
+        select.addEventListener('change', () => {
+            if (select.value === CUSTOM_ICON) {
+                // Eerst alleen opnieuw tekenen; de gebruiker krijgt daarna het vrije mdi:-veld.
+                if (!current || presetValues.has(current))
+                    onChange('mdi:');
+                return;
+            }
+            onChange(select.value);
+        });
+        return wrap;
+    }
+    renderGroups() {
+        const lang = this.uiLang;
+        const box = (0, dom_1.html)('div', { class: 'stack' }, (0, dom_1.html)('h3', {}, (0, i18n_1.t)('ed_groups', lang)), (0, dom_1.html)('p', { class: 'hint' }, (0, i18n_1.t)('ed_groups_hint', lang)));
+        this.groups.forEach((group, index) => box.append(this.renderGroup(group, index)));
+        const add = (0, dom_1.html)('button', { class: 'btn', type: 'button' }, `+ ${(0, i18n_1.t)('ed_add_group', lang)}`);
+        add.addEventListener('click', () => {
+            const name = `${(0, i18n_1.t)('ed_group', lang)} ${this.groups.length + 1}`;
+            this.groups.push({ id: (0, Node_1.generateId)(name, new Set(this.groups.map((g) => g.id ?? ''))), name, display: 'grouped', members: [] });
+            this.commit();
+            this.render();
+        });
+        box.append(add);
+        return this.section('groups', (0, i18n_1.t)('ed_groups', lang), box);
+    }
+    renderGroup(group, index) {
+        const lang = this.uiLang;
+        const name = (0, dom_1.html)('input', { type: 'text', autocomplete: 'off' });
+        name.value = group.name ?? '';
+        name.addEventListener('input', () => { group.name = name.value; });
+        name.addEventListener('change', () => { group.name = name.value.trim(); this.commit(); });
+        const display = (0, dom_1.html)('select');
+        display.append((0, dom_1.html)('option', { value: 'grouped' }, (0, i18n_1.t)('ed_grouped', lang)), (0, dom_1.html)('option', { value: 'individual' }, (0, i18n_1.t)('ed_individual', lang)));
+        display.value = group.display === 'individual' ? 'individual' : 'grouped';
+        display.addEventListener('change', () => { group.display = display.value; this.commit(); this.render(); });
+        const remove = (0, dom_1.html)('button', { class: 'btn danger', type: 'button' }, (0, i18n_1.t)('ed_remove', lang));
+        remove.addEventListener('click', () => { this.groups.splice(index, 1); if (!this.groups.length)
+            delete this.config.groups; this.commit(); this.render(); });
+        const members = (0, dom_1.html)('div', { class: 'stack' });
+        const selected = new Set(group.members ?? []);
+        const candidates = this.nodes.filter((n) => (0, NodeType_1.normalizeType)(n.type) !== 'home' && (0, NodeType_1.normalizeType)(n.type) !== 'backup');
+        for (const node of candidates) {
+            const id = node.id ?? '';
+            const cb = (0, dom_1.html)('input', { type: 'checkbox' });
+            cb.checked = selected.has(id) || (!!node.name && selected.has(node.name));
+            cb.addEventListener('change', () => {
+                const set = new Set((group.members ?? []).map(String));
+                if (cb.checked)
+                    set.add(id);
+                else {
+                    set.delete(id);
+                    if (node.name)
+                        set.delete(node.name);
+                }
+                group.members = [...set].filter(Boolean);
+                this.commit();
+            });
+            members.append((0, dom_1.html)('label', { class: 'check' }, cb, node.name || id));
+        }
+        const icon = this.iconPicker(group.icon, (value) => { group.icon = value || undefined; this.commit(); this.render(); });
+        return (0, dom_1.html)('div', { class: 'device' }, (0, dom_1.html)('div', { class: 'row' }, this.field((0, i18n_1.t)('ed_group_name', lang), name), this.field((0, i18n_1.t)('ed_group_display', lang), display)), this.field((0, i18n_1.t)('ed_group_members', lang), members), icon, remove);
     }
     addDevice() {
         const lang = this.uiLang;
@@ -1806,6 +2014,79 @@ function applyBackupReadings(nodes, connections, readings, demo) {
 }
 
 };
+__modules["src/helpers/groupHelper.ts"] = function(require, module, exports) {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.groupedGroups = groupedGroups;
+exports.createGroupNode = createGroupNode;
+exports.buildDisplayGraph = buildDisplayGraph;
+exports.applyGroupReadings = applyGroupReadings;
+const Connection_1 = require("../models/Connection");
+const Node_1 = require("../models/Node");
+const EntityStatus_1 = require("../types/EntityStatus");
+function groupedGroups(cfg) {
+    return cfg.groups.filter((g) => g.display === 'grouped');
+}
+function createGroupNode(group) {
+    const id = `group_${group.id}`;
+    return (0, Node_1.createNode)({
+        id,
+        name: group.name,
+        type: group.type,
+        icon: group.icon,
+        group_members: group.memberIds,
+    }, group.type, id);
+}
+/**
+ * Maakt alleen voor de presentatie een compacte graaf. Onderliggende nodes blijven in de
+ * echte configuratie bestaan, zodat live berekeningen en history dezelfde data blijven gebruiken.
+ */
+function buildDisplayGraph(cfg) {
+    const active = groupedGroups(cfg);
+    if (active.length === 0)
+        return { nodes: cfg.nodes, connections: cfg.connections, groupNodes: new Map() };
+    const hidden = new Set(active.flatMap((g) => g.memberIds));
+    const nodes = cfg.nodes.filter((n) => !hidden.has(n.id));
+    const connections = cfg.connections.filter((c) => !hidden.has(c.from) && !hidden.has(c.to));
+    const groupNodes = new Map();
+    const byId = new Map(cfg.nodes.map((n) => [n.id, n]));
+    for (const group of active) {
+        const groupNode = createGroupNode(group);
+        groupNodes.set(groupNode.id, groupNode);
+        nodes.push(groupNode);
+        const parent = byId.get(group.parentId) ?? nodes.find((n) => n.role === 'home');
+        if (!parent)
+            continue;
+        const from = groupNode.role === 'consumer' ? parent : groupNode;
+        const to = groupNode.role === 'consumer' ? groupNode : parent;
+        connections.push((0, Connection_1.createConnection)(`${from.id}__${to.id}`, from, to));
+    }
+    return { nodes, connections, groupNodes };
+}
+/** Sommeer groepsleden. Bekende waarden worden opgeteld; pas als niets bruikbaar is wordt de groep '?'. */
+function applyGroupReadings(groups, groupNodes, readings) {
+    for (const group of groups) {
+        if (group.display !== 'grouped')
+            continue;
+        const groupNode = groupNodes.get(`group_${group.id}`);
+        if (!groupNode)
+            continue;
+        let total = 0;
+        let known = 0;
+        for (const id of group.memberIds) {
+            const r = readings.get(id);
+            if (r?.watts !== null && r?.watts !== undefined) {
+                total += r.watts;
+                known++;
+            }
+        }
+        readings.set(groupNode.id, known > 0
+            ? { status: total === 0 ? EntityStatus_1.EntityStatus.Zero : EntityStatus_1.EntityStatus.Valid, watts: total, charging: false }
+            : { status: EntityStatus_1.EntityStatus.Invalid, watts: null, charging: false });
+    }
+}
+
+};
 __modules["src/helpers/historyHelper.ts"] = function(require, module, exports) {
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
@@ -1964,7 +2245,37 @@ const nl = {
     ed_power_entity: "Vermogenssensor",
     ed_advanced: "Geavanceerd",
     ed_remove: "Verwijderen",
-    ed_icon: "Icoon (bijv. mdi:heat-pump)",
+    ed_icon: "Icoon",
+    ed_custom_icon: "Aangepast MDI-icoon",
+    ed_groups: "Groepen",
+    ed_groups_hint: "Groepen zijn optioneel. Gegroepeerd toont één node met het totale vermogen; individueel laat de apparaten los zien.",
+    ed_add_group: "Groep toevoegen",
+    ed_group: "Groep",
+    ed_group_name: "Groepsnaam",
+    ed_group_display: "Weergave",
+    ed_group_members: "Apparaten",
+    ed_grouped: "Gegroepeerd (totaal)",
+    ed_individual: "Los tonen",
+    group_total_of: "Totaal van apparaten:",
+    icon_auto: "Automatisch",
+    icon_solar: "Zonnepanelen",
+    icon_battery: "Batterij",
+    icon_heat_pump: "Warmtepomp",
+    icon_airco: "Airco",
+    icon_ev: "Laadpaal",
+    icon_washing_machine: "Wasmachine",
+    icon_dishwasher: "Vaatwasser",
+    icon_pc: "Computer",
+    icon_server: "Server",
+    icon_light: "Verlichting",
+    icon_pump: "Pomp",
+    icon_socket: "Stopcontact",
+    icon_backup: "Generator / backup",
+    icon_home_battery: "Thuisaccu",
+    icon_boiler: "Boiler",
+    icon_radiator: "Radiator",
+    icon_fan: "Ventilator",
+    icon_custom: "Aangepast…",
     ed_invert: "Teken omdraaien",
     ed_home_entity: "Eigen sensor voor de woning (optioneel)",
     ed_connected_home: "Verbonden met de woning",
@@ -2049,7 +2360,37 @@ const en = {
     ed_power_entity: "Power sensor",
     ed_advanced: "Advanced",
     ed_remove: "Remove",
-    ed_icon: "Icon (e.g. mdi:heat-pump)",
+    ed_icon: "Icon",
+    ed_custom_icon: "Custom MDI icon",
+    ed_groups: "Groups",
+    ed_groups_hint: "Groups are optional. Grouped shows one node with the total power; individual keeps devices separate.",
+    ed_add_group: "Add group",
+    ed_group: "Group",
+    ed_group_name: "Group name",
+    ed_group_display: "Display",
+    ed_group_members: "Devices",
+    ed_grouped: "Grouped (total)",
+    ed_individual: "Show individually",
+    group_total_of: "Total of devices:",
+    icon_auto: "Automatic",
+    icon_solar: "Solar panels",
+    icon_battery: "Battery",
+    icon_heat_pump: "Heat pump",
+    icon_airco: "Air conditioning",
+    icon_ev: "EV charger",
+    icon_washing_machine: "Washing machine",
+    icon_dishwasher: "Dishwasher",
+    icon_pc: "Computer",
+    icon_server: "Server",
+    icon_light: "Lighting",
+    icon_pump: "Pump",
+    icon_socket: "Power socket",
+    icon_backup: "Generator / backup",
+    icon_home_battery: "Home battery",
+    icon_boiler: "Boiler",
+    icon_radiator: "Radiator",
+    icon_fan: "Fan",
+    icon_custom: "Custom…",
     ed_invert: "Invert sign",
     ed_home_entity: "Own sensor for the home (optional)",
     ed_connected_home: "Connected to home",
@@ -2195,7 +2536,7 @@ if (!window.customCards.some((c) => c.type === 'energy-flow-card')) {
         preview: true,
     });
 }
-console.info('%c ENERGY-FLOW-CARD %c 0.8.1 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
+console.info('%c ENERGY-FLOW-CARD %c 0.8.2 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
 
 };
 __modules["src/layout/AutoLayout.ts"] = function(require, module, exports) {
@@ -2427,71 +2768,68 @@ function flowLayout(nodes, auto, links) {
         else
             direct.push(device);
     }
-    /*
-     * v0.8: de Flow-weergave is inhoudsgestuurd in plaats van een vaste canvasmaat.
-     * - maximaal vijf verbruikerslots per rij;
-     * - extra apparaten gaan automatisch naar een volgende rij;
-     * - de kaart wordt na plaatsing strak om de nodes heen getrokken;
-     * - boven en onder blijft hooguit een vaste, rustige buitenmarge over.
-     */
     const COL = 126;
     const SIDE_NODE_X = 78;
     const TOP_Y = 76;
     const SOURCE_TO_HOME = 150;
     const HOME_TO_FIRST_ROW = 150;
     const ROW_GAP = 146;
-    const BACKUP_CHILD_GAP = 142;
+    const BACKUP_ROW_GAP = 108;
     const MAX_ROW_SLOTS = 5;
+    const MAX_BACKUP_COLS = 3;
     const MIN_WIDTH = 520;
     const H_MARGIN = 72;
     const V_MARGIN = 26;
     const LABEL_BOTTOM = 44;
     const LABEL_TOP = 24;
     const SIDE_LABEL = 74;
-    // v0.8.1: gewone verbruikers en backup-takken krijgen ieder hun eigen gebied.
-    // Daardoor kan de lijn naar een backup nooit meer dwars door gewone verbruikers lopen.
+    const REGION_GAP = 96;
     const directRows = [];
     for (let i = 0; i < direct.length; i += MAX_ROW_SLOTS)
         directRows.push(direct.slice(i, i + MAX_ROW_SLOTS));
     const directMax = Math.max(0, ...directRows.map((row) => row.length));
-    const backupColumns = backups.length;
-    const topSlots = Math.max(1, producers.length);
-    const lowerSlots = Math.max(3, directMax + (backupColumns > 0 ? backupColumns + 1 : 0));
-    const contentSlots = Math.max(3, topSlots, lowerSlots);
-    let width = Math.max(MIN_WIDTH, contentSlots * COL + 2 * 138);
+    const directWidth = directMax > 0 ? Math.max(COL, directMax * COL) : 0;
+    const backupMeta = backups.map((backup) => {
+        const children = behind.get(backup.id) ?? [];
+        const cols = Math.max(1, Math.min(MAX_BACKUP_COLS, children.length || 1));
+        const rows = Math.max(1, Math.ceil(children.length / cols));
+        return { backup, children, cols, rows, width: Math.max(COL, cols * COL) };
+    });
+    const backupWidth = backupMeta.reduce((sum, item) => sum + item.width, 0) + Math.max(0, backupMeta.length - 1) * REGION_GAP;
+    const lowerWidth = directWidth + (directWidth && backupWidth ? REGION_GAP : 0) + backupWidth;
+    const topWidth = Math.max(1, producers.length) * COL;
+    let width = Math.max(MIN_WIDTH, lowerWidth + 2 * H_MARGIN, topWidth + 2 * H_MARGIN + 80);
     const centerX = width / 2;
     const homeY = producers.length > 0 ? TOP_Y + SOURCE_TO_HOME : TOP_Y + 58;
     if (home)
         pts.set(home.id, { x: centerX, y: homeY });
-    // Productie boven Home, horizontaal verdeeld.
     producers.forEach((n, i) => pts.set(n.id, { x: centerX + (i - (producers.length - 1) / 2) * COL, y: TOP_Y }));
-    // Net links en opslag rechts, verticaal rond Home bij meerdere exemplaren.
     const sideY = (i, count) => homeY + (i - (count - 1) / 2) * 108;
     grids.forEach((n, i) => pts.set(n.id, { x: SIDE_NODE_X, y: sideY(i, grids.length) }));
     batteries.forEach((n, i) => pts.set(n.id, { x: width - SIDE_NODE_X, y: sideY(i, batteries.length) }));
     const firstRowY = homeY + HOME_TO_FIRST_ROW;
-    // Gewone verbruikers: maximaal vijf per rij en daarna automatisch wrappen.
-    // Als er backups zijn, schuift dit raster iets naar links zodat rechts een vrij backup-pad ontstaat.
-    const consumerShift = backupColumns > 0 ? -0.55 * COL : 0;
-    directRows.forEach((row, rowIndex) => {
-        const rowY = firstRowY + rowIndex * ROW_GAP;
-        row.forEach((node, i) => {
-            const x = centerX + consumerShift + (i - (row.length - 1) / 2) * COL;
-            pts.set(node.id, { x, y: rowY });
+    let cursor = (width - lowerWidth) / 2;
+    if (directWidth > 0) {
+        const directCenter = cursor + directWidth / 2;
+        directRows.forEach((row, rowIndex) => {
+            const y = firstRowY + rowIndex * ROW_GAP;
+            row.forEach((node, i) => pts.set(node.id, { x: directCenter + (i - (row.length - 1) / 2) * COL, y }));
         });
-    });
-    // Backup-takken krijgen rechts een eigen kolom. De apparaten achter een backup worden
-    // onder elkaar gestapeld. Zo blijft de hele tak leesbaar en kruist hij geen gewone nodes.
-    const backupBaseX = centerX + Math.max(1.55 * COL, ((Math.max(1, directMax) - 1) / 2 + 1.25) * COL);
-    backups.forEach((backup, backupIndex) => {
-        const x = backupBaseX + backupIndex * 1.35 * COL;
-        pts.set(backup.id, { x, y: firstRowY });
-        const children = behind.get(backup.id) ?? [];
-        children.forEach((child, childIndex) => {
-            pts.set(child.id, { x, y: firstRowY + (childIndex + 1) * BACKUP_CHILD_GAP });
+        cursor += directWidth + (backupWidth ? REGION_GAP : 0);
+    }
+    for (const item of backupMeta) {
+        const clusterCenter = cursor + item.width / 2;
+        pts.set(item.backup.id, { x: clusterCenter, y: firstRowY });
+        item.children.forEach((child, i) => {
+            const row = Math.floor(i / item.cols);
+            const col = i % item.cols;
+            const countThisRow = Math.min(item.cols, item.children.length - row * item.cols);
+            const x = clusterCenter + (col - (countThisRow - 1) / 2) * COL;
+            const y = firstRowY + (row + 1) * BACKUP_ROW_GAP;
+            pts.set(child.id, { x, y });
         });
-    });
-    // Trek de SVG strak om de werkelijke inhoud. Hiermee verdwijnt de grote lege onderkant.
+        cursor += item.width + REGION_GAP;
+    }
     let minX = Infinity;
     let maxX = -Infinity;
     let minY = Infinity;
@@ -2506,7 +2844,6 @@ function flowLayout(nodes, auto, links) {
     }
     if (!Number.isFinite(minX))
         return { width: MIN_WIDTH, height: 220, positions: new Map() };
-    // Houd Home visueel in het midden van de horizontale ruimte, maar verspil verticaal geen hoogte.
     const horizontalHalf = Math.max(centerX - minX, maxX - centerX);
     minX = centerX - horizontalHalf;
     maxX = centerX + horizontalHalf;
@@ -2698,6 +3035,7 @@ function createNode(config, type, id) {
         icon: config.icon?.trim() || undefined,
         invert: config.invert === true,
         config,
+        groupMembers: Array.isArray(config.group_members) ? [...config.group_members] : undefined,
     };
 }
 /** Maakt uit een naam een uniek id ("Laadpaal" → "laadpaal", daarna "laadpaal_2"). */
@@ -3015,8 +3353,8 @@ function glyph(type) {
             g.append((0, dom_1.svg)('rect', { x: 6.5, y: 5, width: 11, height: 17, rx: 2.2 }), (0, dom_1.svg)('rect', { x: 10, y: 2, width: 4, height: 3, rx: 0.8 }), (0, dom_1.svg)('rect', { class: 'level', x: 8.5, y: 20, width: 7, height: 0, rx: 0.8, fill: 'currentColor', stroke: 'none' }));
             break;
         case 'backup':
-            // Een schild met bliksemschicht: de woning-groep die ook bij een netstoring stroom houdt.
-            g.append((0, dom_1.svg)('path', { d: 'M12 2.8 L19.5 5.8 V12 C19.5 16.6 16.4 19.9 12 21.4 C7.6 19.9 4.5 16.6 4.5 12 V5.8 Z' }), (0, dom_1.svg)('path', { d: 'M12.9 7.6 L9.4 12.6 H12.4 L11.2 16.6 L14.8 11.4 H11.8 Z' }));
+            // Generator/alternator: duidelijker als alternatieve voedingsbron dan het oude schild.
+            g.append((0, dom_1.svg)('rect', { x: 4, y: 6, width: 16, height: 12, rx: 2.2 }), (0, dom_1.svg)('circle', { cx: 10, cy: 12, r: 3.1 }), (0, dom_1.svg)('path', { d: 'M13.3 12 H17 M17 9.6 V14.4 M6.5 18 V20 M17.5 18 V20' }));
             break;
         default:
             break;

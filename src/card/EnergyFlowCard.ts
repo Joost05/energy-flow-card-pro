@@ -9,6 +9,7 @@ import {
 } from '../helpers/flowHelper';
 import { HistoryPoint, bucketize, fetchHistoryBatch } from '../helpers/historyHelper';
 import { hassLanguage, t } from '../helpers/i18n';
+import { applyGroupReadings, buildDisplayGraph } from '../helpers/groupHelper';
 import { formatPower, parsePower } from '../helpers/stateHelper';
 import { HOME_RADIUS, NODE_RADIUS, computeLayout } from '../layout/AutoLayout';
 import type { Connection } from '../models/Connection';
@@ -37,6 +38,9 @@ export class EnergyFlowCard extends HTMLElement {
   private config?: ResolvedConfig;
   private _hass?: Hass;
   private nodeEls = new Map<string, NodeElement>();
+  private displayNodes: EnergyNode[] = [];
+  private displayConnections: Connection[] = [];
+  private groupNodes = new Map<string, EnergyNode>();
   private connEls: { conn: Connection; el: ConnectionElement }[] = [];
   private popup = new Popup(() => this.closePopup());
   private openNodeId?: string;
@@ -132,6 +136,10 @@ export class EnergyFlowCard extends HTMLElement {
     const root = this.shadowRoot!;
     this.nodeEls.clear();
     this.connEls = [];
+    const display = cfg ? buildDisplayGraph(cfg) : undefined;
+    this.displayNodes = display?.nodes ?? [];
+    this.displayConnections = display?.connections ?? [];
+    this.groupNodes = display?.groupNodes ?? new Map();
 
     const card = html('ha-card', { class: customElements.get('ha-card') ? '' : 'fallback' });
     if (cfg?.title) card.append(html('div', { class: 'title' }, cfg.title));
@@ -153,10 +161,12 @@ export class EnergyFlowCard extends HTMLElement {
   }
 
   private buildFlowSvg(cfg: ResolvedConfig): SVGSVGElement {
-    const layout = computeLayout(cfg.nodes, cfg.layout, cfg.connections);
+    const nodes = this.displayNodes.length ? this.displayNodes : cfg.nodes;
+    const connections = this.displayConnections.length ? this.displayConnections : cfg.connections;
+    const layout = computeLayout(nodes, cfg.layout, connections);
     const straight = layout.mode !== 'circle';
-    const byId = new Map(cfg.nodes.map((n) => [n.id, n]));
-    const homeNode = cfg.nodes.find((n) => n.role === 'home');
+    const byId = new Map(nodes.map((n) => [n.id, n]));
+    const homeNode = nodes.find((n) => n.role === 'home');
     const homeY = (homeNode && layout.positions.get(homeNode.id)?.y) ?? layout.height / 2;
     const radiusOf = (n: EnergyNode) => (n.role === 'home' ? HOME_RADIUS : NODE_RADIUS);
 
@@ -165,7 +175,7 @@ export class EnergyFlowCard extends HTMLElement {
     const nodeLayer = svg('g', { class: 'nodes' });
     root.append(connLayer, nodeLayer);
 
-    for (const conn of cfg.connections) {
+    for (const conn of connections) {
       const from = byId.get(conn.from);
       const to = byId.get(conn.to);
       const a = from && layout.positions.get(from.id);
@@ -191,7 +201,7 @@ export class EnergyFlowCard extends HTMLElement {
       connLayer.append(el.el);
     }
 
-    for (const node of cfg.nodes) {
+    for (const node of nodes) {
       const pos = layout.positions.get(node.id);
       if (!pos) continue;
       const nodeEl = createNodeElement(node, pos, radiusOf(node), () => this.openPopup(node.id), labelPositionFor(node, pos.y, homeY, straight));
@@ -208,23 +218,28 @@ export class EnergyFlowCard extends HTMLElement {
     const readings = new Map<string, NodeReading>();
     let flows: Map<string, number | null>;
 
+    let sourceFlows: Map<string, number | null>;
     if (cfg.demo) {
       const tSeconds = DEMO_OFFSET_S + (performance.now() - this.demoStart) / 1000;
       for (const [id, r] of demoReadings(cfg.nodes, tSeconds)) readings.set(id, r);
       applyBackupReadings(cfg.nodes, cfg.connections, readings, true);
-      flows = computeFlows(cfg.nodes, cfg.connections, readings, undefined, { ignoreEntities: true });
+      sourceFlows = computeFlows(cfg.nodes, cfg.connections, readings, undefined, { ignoreEntities: true });
     } else {
       for (const node of cfg.nodes) if (node.role !== 'home') readings.set(node.id, readNode(node, this._hass));
       applyBackupReadings(cfg.nodes, cfg.connections, readings, false);
-      flows = computeFlows(cfg.nodes, cfg.connections, readings, this._hass);
+      sourceFlows = computeFlows(cfg.nodes, cfg.connections, readings, this._hass);
     }
 
     const home = cfg.nodes.find((n) => n.role === 'home');
     if (home) {
-      // Een expliciete woningsensor heeft voorrang. Zonder sensor blijft Woning automatisch berekend.
       const measuredHome = !cfg.demo && !!home.config.power_entity;
-      readings.set(home.id, measuredHome ? readNode(home, this._hass) : computeHomeReading(home, cfg.nodes, cfg.connections, flows));
+      readings.set(home.id, measuredHome ? readNode(home, this._hass) : computeHomeReading(home, cfg.nodes, cfg.connections, sourceFlows));
     }
+
+    applyGroupReadings(cfg.groups, this.groupNodes, readings);
+    const displayNodes = this.displayNodes.length ? this.displayNodes : cfg.nodes;
+    const displayConnections = this.displayConnections.length ? this.displayConnections : cfg.connections;
+    flows = computeFlows(displayNodes, displayConnections, readings, cfg.demo ? undefined : this._hass, { ignoreEntities: cfg.demo });
     return { readings, flows };
   }
 
@@ -245,7 +260,7 @@ export class EnergyFlowCard extends HTMLElement {
     this.computed = this.compute();
     const ctx = { powerFormat: cfg.powerFormat, language: this.language };
 
-    for (const node of cfg.nodes) {
+    for (const node of (this.displayNodes.length ? this.displayNodes : cfg.nodes)) {
       const reading = this.computed.readings.get(node.id);
       if (reading) this.nodeEls.get(node.id)?.update(describeNode(node, reading, ctx));
     }
@@ -300,7 +315,7 @@ export class EnergyFlowCard extends HTMLElement {
 
   private popupModel(nodeId: string): PopupModel | undefined {
     const cfg = this.config;
-    const node = cfg?.nodes.find((n) => n.id === nodeId);
+    const node = (this.displayNodes.length ? this.displayNodes : cfg?.nodes ?? []).find((n) => n.id === nodeId);
     const reading = this.computed?.readings.get(nodeId);
     if (!cfg || !node || !reading) return undefined;
 
@@ -310,7 +325,17 @@ export class EnergyFlowCard extends HTMLElement {
 
     if (reading.soc) rows.push({ label: t('soc', lang), value: view.socText ?? '?' });
 
-    if (!cfg.demo) {
+    if (node.groupMembers?.length) {
+      for (const memberId of node.groupMembers) {
+        const member = cfg.nodes.find((n) => n.id === memberId);
+        const memberReading = this.computed?.readings.get(memberId);
+        if (!member) continue;
+        const value = memberReading?.watts === null || memberReading?.watts === undefined ? '?' : formatPower(memberReading.watts, cfg.powerFormat);
+        rows.push({ label: member.name ?? member.id, value });
+      }
+    }
+
+    if (!cfg.demo && !node.groupMembers?.length) {
       for (const field of advancedFieldsFor(node.type)) {
         if (field === 'soc_entity') continue;
         if (field === 'production_entity' && !node.config.power_entity) continue;
@@ -326,7 +351,7 @@ export class EnergyFlowCard extends HTMLElement {
 
     const powerEntity = node.config.power_entity ?? node.config.production_entity;
     const computedHome = node.role === 'home' && !node.config.power_entity;
-    const history = cfg.demo || powerEntity || computedHome || node.type === 'backup'
+    const history = cfg.demo || powerEntity || computedHome || node.type === 'backup' || !!node.groupMembers?.length
       ? (this.history.get(nodeId)?.state ?? { kind: 'loading' as const })
       : { kind: 'none' as const };
 
@@ -348,7 +373,7 @@ export class EnergyFlowCard extends HTMLElement {
       status: view.status,
       rows,
       history,
-      note: node.role === 'home' ? t(computedHome ? 'home_computed' : 'home_measured', lang) : undefined,
+      note: node.groupMembers?.length ? `${t('group_total_of', lang)} ${node.groupMembers.length}` : node.role === 'home' ? t(computedHome ? 'home_computed' : 'home_measured', lang) : undefined,
       powerFormat: cfg.powerFormat,
       language: lang,
     };
@@ -356,7 +381,7 @@ export class EnergyFlowCard extends HTMLElement {
 
   private async ensureHistory(nodeId: string): Promise<void> {
     const cfg = this.config;
-    const node = cfg?.nodes.find((n) => n.id === nodeId);
+    const node = (this.displayNodes.length ? this.displayNodes : cfg?.nodes ?? []).find((n) => n.id === nodeId);
     if (!cfg || !node) return;
 
     const cached = this.history.get(nodeId);
@@ -419,7 +444,7 @@ export class EnergyFlowCard extends HTMLElement {
 
     const entityIds = this.historyEntityIds();
     if (entityIds.length === 0) {
-      for (const node of cfg.nodes) this.storeHistory(node, { kind: 'none' });
+      for (const node of (this.displayNodes.length ? this.displayNodes : cfg.nodes)) this.storeHistory(node, { kind: 'none' });
       this.historyBundleFetchedAt = Date.now();
       return;
     }
@@ -436,7 +461,8 @@ export class EnergyFlowCard extends HTMLElement {
         series.set(id, new Map(points.map((p) => [p.t, p.v])));
       }
 
-      const perNode = new Map<string, HistoryPoint[]>(cfg.nodes.map((n) => [n.id, []]));
+      const historyNodes = this.displayNodes.length ? this.displayNodes : cfg.nodes;
+      const perNode = new Map<string, HistoryPoint[]>(historyNodes.map((n) => [n.id, []]));
       for (const time of timeline) {
         const states: Hass['states'] = {};
         for (const id of entityIds) {
@@ -454,14 +480,15 @@ export class EnergyFlowCard extends HTMLElement {
           const measured = !!home.config.power_entity;
           readings.set(home.id, measured ? readNode(home, historicalHass) : computeHomeReading(home, cfg.nodes, cfg.connections, flows));
         }
-        for (const node of cfg.nodes) {
+        applyGroupReadings(cfg.groups, this.groupNodes, readings);
+        for (const node of historyNodes) {
           const watts = readings.get(node.id)?.watts;
           if (typeof watts === 'number') perNode.get(node.id)?.push({ t: time, v: watts });
         }
       }
 
       const fetchedAt = Date.now();
-      for (const node of cfg.nodes) {
+      for (const node of historyNodes) {
         const points = perNode.get(node.id) ?? [];
         this.storeHistory(node, points.length >= 2 ? { kind: 'ready', points, start, end } : { kind: 'none' }, fetchedAt);
       }
@@ -511,7 +538,8 @@ export class EnergyFlowCard extends HTMLElement {
   private restoreHistorySessionCache(): void {
     const cfg = this.config;
     if (!cfg) return;
-    for (const node of cfg.nodes) {
+    const nodes = [...cfg.nodes, ...this.groupNodes.values()];
+    for (const node of nodes) {
       const current = this.history.get(node.id);
       if (current && Date.now() - current.fetchedAt < HISTORY_TTL_MS) continue;
       const restored = this.readHistorySession(node);
@@ -537,6 +565,7 @@ export class EnergyFlowCard extends HTMLElement {
     const signature = cfg.nodes
       .map((n) => [n.id, n.config.power_entity, n.config.production_entity, n.config.charge_power_entity, n.config.discharge_power_entity, n.invert])
       .concat(cfg.connections.map((c) => [c.id, c.from, c.to, c.entity, c.invert]))
+      .concat(cfg.groups.map((g) => [g.id, g.display, g.name, g.icon, ...g.memberIds]))
       .map((x) => x.join(':'))
       .join('|');
     let hash = 2166136261;
@@ -585,6 +614,7 @@ export class EnergyFlowCard extends HTMLElement {
       const tSeconds = nowT - 240 + (240 * i) / (samples - 1);
       const readings = demoReadings(cfg.nodes, tSeconds);
       applyBackupReadings(cfg.nodes, cfg.connections, readings, true);
+      applyGroupReadings(cfg.groups, this.groupNodes, readings);
       let watts: number | null | undefined;
       if (node.role === 'home' && home) {
         const flows = computeFlows(cfg.nodes, cfg.connections, readings, undefined, { ignoreEntities: true });

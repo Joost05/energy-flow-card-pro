@@ -317,7 +317,7 @@ describe('Flow layout v0.8 adaptief', () => {
     assert.ok(Math.max(...counts.values()) <= 5, `te veel nodes op één rij: ${Math.max(...counts.values())}`);
   });
 
-  it('zet een backup in een eigen kolom en stackt de apparaten er verticaal onder', () => {
+  it('zet een backup in een eigen gebied en de apparaten compact eronder', () => {
     const l = flow(4, [
       { name: 'Backup', type: 'backup' },
       { name: 'Server', type: 'consumer', connected_to: 'Backup' },
@@ -326,7 +326,25 @@ describe('Flow layout v0.8 adaptief', () => {
     const b = l.positions.get('backup')!;
     const s = l.positions.get('server')!;
     const n = l.positions.get('nas')!;
-    assert.ok(s.y > b.y && n.y > s.y, 'backup-kinderen staan onder elkaar');
-    assert.ok(Math.abs(s.x - b.x) < 1 && Math.abs(n.x - b.x) < 1, 'de stack blijft in dezelfde kolom');
+    assert.ok(s.y > b.y && n.y > b.y, 'backup-kinderen staan onder de backup');
+    assert.ok(Math.abs((s.x + n.x) / 2 - b.x) < 1, 'het backup-raster blijft onder de backup gecentreerd');
+  });
+});
+
+describe('Flow backup-raster v0.8.2', () => {
+  it('verdeelt veel backup-verbruikers over maximaal drie kolommen', () => {
+    const cfg = normalizeConfig({
+      nodes: [
+        { name: 'Backup', type: 'backup' },
+        ...Array.from({ length: 8 }, (_, i) => ({ name: `B${i + 1}`, type: 'consumer', connected_to: 'Backup' })),
+      ],
+    });
+    const l = computeLayout(cfg.nodes, cfg.layout, cfg.connections);
+    const children = Array.from({ length: 8 }, (_, i) => l.positions.get(`b${i + 1}`)!);
+    const rows = new Map<string, number>();
+    for (const p of children) rows.set(p.y.toFixed(1), (rows.get(p.y.toFixed(1)) ?? 0) + 1);
+    assert.ok([...rows.values()].every((count) => count <= 3), 'maximaal drie backup-apparaten per rij');
+    assert.ok(rows.size >= 3);
+    assert.ok(l.height < 720, `backup-raster is te hoog: ${l.height}`);
   });
 });

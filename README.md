@@ -6,6 +6,8 @@ A custom Home Assistant Lovelace card for visualising live energy flows between 
 
 - Live animated energy flows
 - Flow, round and straight layouts
+- Optional device groups with a live summed power node or individual display
+- Icon dropdown with common presets plus a custom `mdi:` option
 - Optional home power sensor or automatic home calculation with reconstructed 24-hour history
 - Detail popup with 24-hour graph, peak/average power and extra measurements
 - Home Assistant entity pickers in the visual editor
@@ -15,6 +17,15 @@ A custom Home Assistant Lovelace card for visualising live energy flows between 
 - Demo mode for testing without sensors
 
 ## Version history
+
+### v0.8.2
+
+- Added optional device groups: combine for example two heat pumps into one node with their summed live power, or switch the group back to individual display.
+- Group popups list the individual member powers and use the same 24-hour history system.
+- Added an icon dropdown with common Home Assistant/MDI presets and a **Custom…** option for any other `mdi:` icon.
+- Replaced the old shield-style Backup glyph with a generator/alternator-style default icon.
+- Backup consumers now use a compact responsive grid (up to three columns) instead of one very tall vertical stack.
+- Grouping and icon controls follow the active Dutch/English Home Assistant language.
 
 ### v0.8.1
 - Echt inhoudsgestuurde kaarthoogte zonder vaste minimumhoogte.
@@ -104,6 +115,31 @@ Then add the card:
 
 ```yaml
 type: custom:energy-flow-card
+```
+
+## Optional groups
+
+Groups do not replace the underlying devices. They only control how those devices are displayed. Set `display: grouped` for one total node or `display: individual` to keep the members separate.
+
+```yaml
+type: custom:energy-flow-card
+nodes:
+  - id: wp_1
+    name: Heat pump 1
+    type: heat_pump
+    power_entity: sensor.wp_1_power
+  - id: wp_2
+    name: Heat pump 2
+    type: heat_pump
+    power_entity: sensor.wp_2_power
+groups:
+  - id: heat_pumps
+    name: Heat pumps
+    icon: mdi:heat-pump
+    display: grouped
+    members:
+      - wp_1
+      - wp_2
 ```
 
 ## Development
