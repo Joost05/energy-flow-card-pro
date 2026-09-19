@@ -239,6 +239,7 @@ describe('rechte layout', () => {
 describe('ronde layout met een backup', () => {
   it('zet apparaten achter een backup op de buitenring, naast hun backup', () => {
     const cfg = normalizeConfig({
+      layout: { mode: 'circle' },
       nodes: [
         { name: 'Backup', type: 'backup' },
         { name: 'Server', type: 'consumer', connected_to: 'Backup' },
@@ -275,5 +276,57 @@ describe('rechte verbindingen', () => {
   it('blijft een gewone lijn als de nodes naast elkaar staan', () => {
     const g = computeGeometry(home, { center: { x: 200, y: 0 }, radius: 44 }, false, true);
     assert.ok(!g.forward.includes('Q'));
+  });
+});
+
+describe('Flow layout v0.8 adaptief', () => {
+  const flow = (count: number, extra: unknown[] = []) => {
+    const cfg = normalizeConfig({
+      nodes: [
+        { name: 'Net', type: 'grid' },
+        { name: 'PV', type: 'solar' },
+        { name: 'Accu', type: 'battery' },
+        ...Array.from({ length: count }, (_, i) => ({ name: `Verbruiker ${i + 1}`, type: 'consumer' })),
+        ...extra,
+      ],
+    });
+    return computeLayout(cfg.nodes, cfg.layout, cfg.connections);
+  };
+
+  it('houdt een kleine installatie compact zonder grote lege onderkant', () => {
+    const l = flow(2);
+    assert.ok(l.height < 560, `kaart is te hoog: ${l.height}`);
+    const ys = [...l.positions.values()].map((p) => p.y);
+    const bottom = Math.max(...ys);
+    assert.ok(l.height - bottom < 150, `te veel ruimte onder nodes: ${l.height - bottom}`);
+  });
+
+  it('verdeelt tien verbruikers automatisch over meerdere rijen', () => {
+    const l = flow(10);
+    const ys = Array.from({ length: 10 }, (_, i) => l.positions.get(`verbruiker_${i + 1}`)!.y);
+    assert.ok(new Set(ys.map((y) => Math.round(y))).size >= 2, 'alle verbruikers staan nog op één rij');
+  });
+
+  it('houdt maximaal vijf gewone verbruikers op één rij', () => {
+    const l = flow(12);
+    const counts = new Map<number, number>();
+    for (let i = 1; i <= 12; i++) {
+      const y = Math.round(l.positions.get(`verbruiker_${i}`)!.y);
+      counts.set(y, (counts.get(y) ?? 0) + 1);
+    }
+    assert.ok(Math.max(...counts.values()) <= 5, `te veel nodes op één rij: ${Math.max(...counts.values())}`);
+  });
+
+  it('reserveert een aparte rij voor apparaten achter een backup zonder overlap', () => {
+    const l = flow(4, [
+      { name: 'Backup', type: 'backup' },
+      { name: 'Server', type: 'consumer', connected_to: 'Backup' },
+      { name: 'NAS', type: 'consumer', connected_to: 'Backup' },
+    ]);
+    const b = l.positions.get('backup')!;
+    const s = l.positions.get('server')!;
+    const n = l.positions.get('nas')!;
+    assert.ok(s.y > b.y && n.y === s.y);
+    assert.ok(Math.abs((s.x + n.x) / 2 - b.x) < 1);
   });
 });

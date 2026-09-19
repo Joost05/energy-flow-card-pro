@@ -80,7 +80,7 @@ const nl: Record<string, string> = {
   ed_add_first: "Voeg eerst een apparaat toe.",
   ed_connected_to: "Aangesloten op",
   ed_layout: "Weergave",
-  ed_layout_flow: "Flow: energiestromen centraal",
+  ed_layout_flow: "Flow: automatisch en compact",
   ed_layout_circle: "Rond: vaste plekken rond de woning",
   ed_layout_straight: "Recht: van boven naar beneden",
 };
@@ -166,7 +166,7 @@ const en: Record<string, string> = {
   ed_add_first: "Add a device first.",
   ed_connected_to: "Connected to",
   ed_layout: "Layout",
-  ed_layout_flow: "Flow: energy flows first",
+  ed_layout_flow: "Flow: automatic and compact",
   ed_layout_circle: "Round: fixed spots around the home",
   ed_layout_straight: "Straight: top to bottom",
 };

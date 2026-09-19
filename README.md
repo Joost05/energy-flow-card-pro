@@ -16,6 +16,13 @@ A custom Home Assistant Lovelace card for visualising live energy flows between 
 
 ## Version history
 
+### v0.8.0
+- Adaptive Flow layout that sizes the card to its actual contents.
+- Maximum outer spacing above and below the nodes, removing large empty areas.
+- Smart wrapping: large sets of consumers are automatically split over multiple rows.
+- Backup clusters stay together with their downstream devices.
+- Flow layout remains responsive on desktop, tablet and mobile.
+
 ### v0.7.5
 
 - 24-hour history preload now starts immediately in the background when the card becomes visible.

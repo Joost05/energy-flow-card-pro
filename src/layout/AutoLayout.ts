@@ -257,47 +257,123 @@ function flowLayout(nodes: readonly EnergyNode[], auto: readonly EnergyNode[], l
     else direct.push(device);
   }
 
+  /*
+   * v0.8: de Flow-weergave is inhoudsgestuurd in plaats van een vaste canvasmaat.
+   * - maximaal vijf verbruikerslots per rij;
+   * - extra apparaten gaan automatisch naar een volgende rij;
+   * - de kaart wordt na plaatsing strak om de nodes heen getrokken;
+   * - boven en onder blijft hooguit een vaste, rustige buitenmarge over.
+   */
   const COL = 126;
-  const SIDE = 138;
-  const TOP = 90;
-  const HOME_Y = 245;
-  const DEVICE_Y = 405;
-  const BACKUP_CHILD_Y = 555;
-  const sideRows = Math.max(grids.length, batteries.length, 1);
-  const lowerSlots = direct.length + backups.reduce((sum, b) => sum + Math.max(1, behind.get(b.id)?.length ?? 0), 0);
-  const topSlots = Math.max(1, producers.length);
-  const contentSlots = Math.max(topSlots, lowerSlots, 3);
-  const width = Math.max(520, contentSlots * COL + SIDE * 2);
-  const centerX = width / 2;
-  const height = backups.some((b) => (behind.get(b.id)?.length ?? 0) > 0) ? 650 : 505;
+  const SIDE_NODE_X = 78;
+  const TOP_Y = 76;
+  const SOURCE_TO_HOME = 150;
+  const HOME_TO_FIRST_ROW = 150;
+  const ROW_GAP = 146;
+  const BACKUP_CHILD_GAP = 142;
+  const MAX_ROW_SLOTS = 5;
+  const MIN_WIDTH = 520;
+  const H_MARGIN = 72;
+  const V_MARGIN = 42;
+  const LABEL_BOTTOM = 44;
+  const LABEL_TOP = 24;
+  const SIDE_LABEL = 74;
 
-  if (home) pts.set(home.id, { x: centerX, y: HOME_Y });
+  type FlowItem = { node: EnergyNode; children: EnergyNode[]; slots: number };
+  const items: FlowItem[] = [
+    ...direct.map((node) => ({ node, children: [], slots: 1 })),
+    ...backups.map((node) => {
+      const children = behind.get(node.id) ?? [];
+      return { node, children, slots: Math.max(1, children.length) };
+    }),
+  ];
+
+  // Pak clusters in overzichtelijke rijen. Een backup met kinderen blijft één cluster.
+  const rows: FlowItem[][] = [];
+  let current: FlowItem[] = [];
+  let used = 0;
+  for (const item of items) {
+    const slots = Math.min(Math.max(1, item.slots), Math.max(MAX_ROW_SLOTS, item.slots));
+    if (current.length > 0 && used + slots > MAX_ROW_SLOTS) {
+      rows.push(current);
+      current = [];
+      used = 0;
+    }
+    current.push(item);
+    used += slots;
+  }
+  if (current.length > 0) rows.push(current);
+
+  const maxConsumerSlots = Math.max(
+    1,
+    ...rows.map((row) => row.reduce((sum, item) => sum + item.slots, 0)),
+  );
+  const topSlots = Math.max(1, producers.length);
+  const contentSlots = Math.max(3, topSlots, maxConsumerSlots);
+  let width = Math.max(MIN_WIDTH, contentSlots * COL + 2 * 138);
+  const centerX = width / 2;
+  const homeY = producers.length > 0 ? TOP_Y + SOURCE_TO_HOME : TOP_Y + 58;
+
+  if (home) pts.set(home.id, { x: centerX, y: homeY });
 
   // Productie boven Home, horizontaal verdeeld.
-  producers.forEach((n, i) => pts.set(n.id, { x: centerX + (i - (producers.length - 1) / 2) * COL, y: TOP }));
+  producers.forEach((n, i) => pts.set(n.id, { x: centerX + (i - (producers.length - 1) / 2) * COL, y: TOP_Y }));
 
-  // Net links en opslag rechts. Bij meerdere nodes worden ze verticaal verdeeld rond Home.
-  const sideY = (i: number, count: number) => HOME_Y + (i - (count - 1) / 2) * 112;
-  grids.forEach((n, i) => pts.set(n.id, { x: 78, y: sideY(i, grids.length) }));
-  batteries.forEach((n, i) => pts.set(n.id, { x: width - 78, y: sideY(i, batteries.length) }));
+  // Net links en opslag rechts, verticaal rond Home bij meerdere exemplaren.
+  const sideY = (i: number, count: number) => homeY + (i - (count - 1) / 2) * 108;
+  grids.forEach((n, i) => pts.set(n.id, { x: SIDE_NODE_X, y: sideY(i, grids.length) }));
+  batteries.forEach((n, i) => pts.set(n.id, { x: width - SIDE_NODE_X, y: sideY(i, batteries.length) }));
 
-  // Onder Home: directe verbruikers en backups. Een backup reserveert evenveel kolommen als kinderen erachter.
-  const items: EnergyNode[] = [...direct, ...backups];
-  const widthOf = (n: EnergyNode) => (n.type === 'backup' ? Math.max(1, behind.get(n.id)?.length ?? 0) : 1);
-  const total = Math.max(1, items.reduce((sum, n) => sum + widthOf(n), 0));
-  let cursor = 0;
-  for (const item of items) {
-    const slots = widthOf(item);
-    const x = centerX + (cursor + (slots - 1) / 2 - (total - 1) / 2) * COL;
-    pts.set(item.id, { x, y: DEVICE_Y });
-    (behind.get(item.id) ?? []).forEach((child, i) =>
-      pts.set(child.id, { x: centerX + (cursor + i - (total - 1) / 2) * COL, y: BACKUP_CHILD_Y }),
-    );
-    cursor += slots;
+  // Verbruikers/backup-clusters onder Home. Rijen groeien alleen als dat nodig is.
+  let y = homeY + HOME_TO_FIRST_ROW;
+  rows.forEach((row) => {
+    const totalSlots = row.reduce((sum, item) => sum + item.slots, 0);
+    let cursor = 0;
+    let hasChildren = false;
+    for (const item of row) {
+      const x = centerX + (cursor + (item.slots - 1) / 2 - (totalSlots - 1) / 2) * COL;
+      pts.set(item.node.id, { x, y });
+      if (item.children.length > 0) {
+        hasChildren = true;
+        item.children.forEach((child, i) => {
+          const childX = centerX + (cursor + i - (totalSlots - 1) / 2) * COL;
+          pts.set(child.id, { x: childX, y: y + BACKUP_CHILD_GAP });
+        });
+      }
+      cursor += item.slots;
+    }
+    y += hasChildren ? ROW_GAP + BACKUP_CHILD_GAP : ROW_GAP;
+  });
+
+  // Trek de SVG strak om de werkelijke inhoud. Hiermee verdwijnt de grote lege onderkant.
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const [id, p] of pts) {
+    const node = byId.get(id);
+    const radius = node?.role === 'home' ? HOME_RADIUS : NODE_RADIUS;
+    minX = Math.min(minX, p.x - radius);
+    maxX = Math.max(maxX, p.x + radius + (node?.role === 'home' || node?.type === 'backup' ? SIDE_LABEL : 0));
+    minY = Math.min(minY, p.y - radius - LABEL_TOP);
+    maxY = Math.max(maxY, p.y + radius + LABEL_BOTTOM);
   }
+  if (!Number.isFinite(minX)) return { width: MIN_WIDTH, height: 220, positions: new Map() };
 
-  // Nodes met handmatige positie zijn uit `auto` gefilterd; Home blijft altijd het centrale knooppunt.
-  return { width: Math.round(width), height, positions: pts };
+  // Houd Home visueel in het midden van de horizontale ruimte, maar verspil verticaal geen hoogte.
+  const horizontalHalf = Math.max(centerX - minX, maxX - centerX);
+  minX = centerX - horizontalHalf;
+  maxX = centerX + horizontalHalf;
+
+  const fittedWidth = Math.max(MIN_WIDTH, maxX - minX + 2 * H_MARGIN);
+  const fittedHeight = Math.max(260, maxY - minY + 2 * V_MARGIN);
+  const dx = (fittedWidth - (maxX - minX)) / 2 - minX;
+  const dy = V_MARGIN - minY;
+
+  const positions = new Map<string, Point>();
+  for (const [id, p] of pts) positions.set(id, { x: p.x + dx, y: p.y + dy });
+  width = fittedWidth;
+  return { width: Math.round(width), height: Math.round(fittedHeight), positions };
 }
 
 // ----- Recht ----------------------------------------------------------------------------------

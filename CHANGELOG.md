@@ -1,5 +1,15 @@
 # Changelog
 
+
+## 0.8.0
+
+- Added adaptive sizing to the default Flow layout.
+- Removed fixed Flow canvas heights; the card now fits the actual nodes with bounded top/bottom margins.
+- Added automatic multi-row wrapping for large numbers of consumers (maximum five slots per row).
+- Backup nodes and their downstream consumers are kept together as layout clusters.
+- Updated Flow layout labels in Dutch and English.
+- Added regression tests for compact height, wrapping and backup clusters.
+
 ## v0.7.5
 
 - De gezamenlijke 24-uurs history-load start nu direct op de achtergrond zodra de kaart zichtbaar is, in plaats van pas na een wachttijd.
