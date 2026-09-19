@@ -205,9 +205,9 @@ test('fixed pricing accepts independent import and export tariffs', () => {
   assert.equal(cfg.pricing.exportPrice, 0.08);
 });
 
-test('dynamic pricing preserves provider and HA price entities', () => {
+test('legacy dynamic pricing is migrated to Home Assistant price entities', () => {
   const cfg = normalizeConfig({ pricing: { mode: 'dynamic', provider: 'frank', import_price_entity: 'sensor.buy', export_price_entity: 'sensor.sell' } });
-  assert.equal(cfg.pricing.provider, 'frank');
+  assert.equal(cfg.pricing.mode, 'entities');
   assert.equal(cfg.pricing.importPriceEntity, 'sensor.buy');
   assert.equal(cfg.pricing.exportPriceEntity, 'sensor.sell');
 });

@@ -19,12 +19,20 @@ A custom Home Assistant Lovelace card for visualizing live energy flows, device-
 - Dutch and English UI, following the active Home Assistant frontend language
 - Light and dark theme support through Home Assistant theme variables
 - Responsive layout for desktop, tablet and mobile
-- Optional electricity pricing with fixed import/export tariffs, Home Assistant price entities or dynamic-contract presets
-- Dynamic supplier/source presets for Frank Energie, Zonneplan, Tibber, ANWB Energy, NextEnergy and Nord Pool
-- Live grid cost/revenue rate in the Grid detail popup
+- Optional electricity pricing with fixed import/export tariffs or Home Assistant price entities
+- Live grid cost/revenue rate plus **Revenue today** in the Grid detail popup
 - Demo mode with example energy prices for testing without sensors
 
 ## Version history
+
+### v0.9.1
+
+- Moved electricity pricing to its own **Prices** wizard step.
+- Removed supplier presets; dynamic suppliers are handled by Home Assistant integrations and their price entities.
+- Kept backward compatibility with v0.9.0 `dynamic` pricing configs by treating them as price-entity configs.
+- Simplified the compact price badge to two decimals and one shared `/kWh` suffix.
+- Added **Revenue today** to the Grid popup when an export-energy entity and export tariff are configured.
+- Updated Demo mode to use the new price UI and show example daily export revenue.
 
 ### v0.9.0
 
@@ -146,11 +154,9 @@ type: custom:energy-flow-card
 
 ## Energy pricing
 
-Pricing is optional and independent from the energy-flow calculation. Import and export are configured separately.
+Pricing is configured in the dedicated **Prices** step of the visual editor. The card deliberately does not contain supplier-specific logic: use the entities exposed by your Home Assistant energy-price integration (for example Tibber) or enter fixed all-in tariffs.
 
 ### Fixed tariffs
-
-Use fixed all-in prices per kWh:
 
 ```yaml
 pricing:
@@ -162,32 +168,17 @@ pricing:
 
 ### Home Assistant price entities
 
-Use entities that expose the current price per kWh:
-
 ```yaml
 pricing:
   mode: entities
   currency: EUR
-  import_price_entity: sensor.current_import_price
-  export_price_entity: sensor.current_export_price
+  import_price_entity: sensor.electricity_import_price
+  export_price_entity: sensor.electricity_export_price
 ```
 
-Common `EUR/kWh` values are read directly. Price entities using cents per kWh such as `ct/kWh` are converted automatically.
+Price entities may use currency/kWh or cent/kWh units. The card normalizes common cent-per-kWh units automatically.
 
-### Dynamic contract presets
-
-The visual editor includes presets for **Frank Energie**, **Zonneplan**, **Tibber**, **ANWB Energy**, **NextEnergy**, **Nord Pool** and **Other**. A preset helps organize/select the corresponding Home Assistant price entities; the card does **not** connect directly to an energy supplier or external supplier API.
-
-```yaml
-pricing:
-  mode: dynamic
-  provider: frank
-  currency: EUR
-  import_price_entity: sensor.my_dynamic_import_price
-  export_price_entity: sensor.my_dynamic_export_price
-```
-
-When pricing is enabled, the card shows the current import/export price and the **Grid** popup shows the current cost or export revenue rate per hour.
+When pricing is enabled, the card shows a compact current import/export price badge. The **Grid** popup shows current price, current cost/revenue rate and, when `energy_export_entity` is configured on the Grid node, estimated **Revenue today** from today's exported energy. For variable price entities the historic price series is used when Home Assistant history is available.
 
 ## Optional device groups
 

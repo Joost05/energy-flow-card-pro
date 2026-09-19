@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.1
+
+- Added a dedicated **Prices** step to the visual editor.
+- Removed supplier presets from the card; use Home Assistant price entities from supplier integrations instead.
+- Legacy v0.9.0 `dynamic` price configs remain compatible and are migrated to entity pricing internally.
+- Reduced price display precision to two decimals and compacted the card badge to one `/kWh` suffix.
+- Added **Revenue today** to the Grid popup using the configured export-energy entity and export tariff/history.
+- Updated Demo mode with the new price workflow and example daily export revenue.
+- Updated runtime version to **0.9.1**.
+
 ## 0.9.0
 
 - Added optional energy pricing with separate import and export tariffs.

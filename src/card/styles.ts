@@ -23,6 +23,8 @@ ha-card.fallback {
 .stage { position: relative; padding: 10px 12px 18px; min-height: 0; }
 .flow { display: block; width: 100%; max-width: 860px; height: auto; margin: 0 auto; }
 
+.price-unit { color: var(--secondary-text-color, #727272); margin-left: 2px; }
+
 .badge {
   position: absolute; top: 10px; left: 12px; z-index: 1;
   padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 500;

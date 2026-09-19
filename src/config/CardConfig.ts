@@ -9,8 +9,7 @@ import type { NodeType } from '../types/NodeType';
 
 
 
-export type PricingMode = 'none' | 'fixed' | 'entities' | 'dynamic';
-export type DynamicProvider = 'frank' | 'zonneplan' | 'tibber' | 'anwb' | 'nextenergy' | 'nordpool' | 'other';
+export type PricingMode = 'none' | 'fixed' | 'entities';
 
 export interface PricingConfig {
   mode?: PricingMode;
@@ -22,8 +21,6 @@ export interface PricingConfig {
   /** HA entities whose current state is a price per kWh. */
   import_price_entity?: string;
   export_price_entity?: string;
-  /** Optional preset label for a dynamic contract. No supplier API is called directly. */
-  provider?: DynamicProvider;
 }
 
 export interface ResolvedPricingConfig {
@@ -33,7 +30,6 @@ export interface ResolvedPricingConfig {
   exportPrice?: number;
   importPriceEntity?: string;
   exportPriceEntity?: string;
-  provider?: DynamicProvider;
 }
 
 export interface DeviceGroupConfig {
@@ -183,25 +179,21 @@ function optionalPrice(value: unknown, key: string): number | undefined {
 function parsePricing(raw: unknown): ResolvedPricingConfig {
   if (raw === undefined || raw === null) return { mode: 'none', currency: 'EUR' };
   if (!isRecord(raw)) throw new ConfigError('"pricing" moet een object zijn.');
-  const mode = (raw.mode ?? 'none') as PricingMode;
-  if (!['none', 'fixed', 'entities', 'dynamic'].includes(mode)) {
-    throw new ConfigError('"pricing.mode" moet "none", "fixed", "entities" of "dynamic" zijn.');
+  const rawMode = typeof raw.mode === 'string' ? raw.mode : 'none';
+  const normalizedMode: PricingMode = rawMode === 'dynamic' ? 'entities' : rawMode as PricingMode;
+  if (!['none', 'fixed', 'entities'].includes(normalizedMode)) {
+    throw new ConfigError('"pricing.mode" moet "none", "fixed" of "entities" zijn.');
   }
   const currency = typeof raw.currency === 'string' && raw.currency.trim() ? raw.currency.trim().toUpperCase() : 'EUR';
-  const provider = typeof raw.provider === 'string' ? raw.provider as DynamicProvider : undefined;
-  if (provider && !['frank','zonneplan','tibber','anwb','nextenergy','nordpool','other'].includes(provider)) {
-    throw new ConfigError('"pricing.provider" is onbekend.');
-  }
   const importPriceEntity = typeof raw.import_price_entity === 'string' && raw.import_price_entity.trim() ? raw.import_price_entity.trim() : undefined;
   const exportPriceEntity = typeof raw.export_price_entity === 'string' && raw.export_price_entity.trim() ? raw.export_price_entity.trim() : undefined;
   return {
-    mode,
+    mode: normalizedMode,
     currency,
     importPrice: optionalPrice(raw.import_price, 'pricing.import_price'),
     exportPrice: optionalPrice(raw.export_price, 'pricing.export_price'),
     importPriceEntity,
     exportPriceEntity,
-    provider,
   };
 }
 

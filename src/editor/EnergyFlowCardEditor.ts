@@ -1,6 +1,5 @@
 import { CardConfig, DeviceGroupConfig, PricingConfig, ResolvedConfig, normalizeConfig } from '../config/CardConfig';
 import { hassLanguage, t } from '../helpers/i18n';
-import { DYNAMIC_PROVIDERS, providerKeywords } from '../helpers/pricingHelper';
 import type { ConnectionConfig } from '../models/Connection';
 import { NodeConfig, advancedFieldsFor, fieldLabelKey, generateId } from '../models/Node';
 import { html } from '../renderer/dom';
@@ -72,7 +71,7 @@ h3 { margin: 0; font-size: 14px; font-weight: 600; }
 .list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; }
 `;
 
-type Step = 1 | 2 | 3;
+type Step = 1 | 2 | 3 | 4;
 
 /** JSON met gesorteerde sleutels: twee configuraties met dezelfde inhoud zijn dan altijd gelijk, ook bij een andere sleutelvolgorde. */
 function stable(value: unknown): string {
@@ -84,7 +83,7 @@ function stable(value: unknown): string {
 }
 
 /**
- * Wizard in drie stappen: 1 Apparaten, 2 Verbindingen, 3 Voorbeeld.
+ * Wizard in vier stappen: 1 Apparaten, 2 Verbindingen, 3 Prijzen, 4 Voorbeeld.
  * De wizard schrijft gewone kaart-YAML (inclusief gegenereerde ids en connections);
  * wie liever direct YAML schrijft, kan de wizard gewoon overslaan.
  */
@@ -168,6 +167,7 @@ export class EnergyFlowCardEditor extends HTMLElement {
     const wizard = html('div', { class: 'wizard' }, this.renderTabs());
     if (this.step === 1) wizard.append(this.renderDevices());
     else if (this.step === 2) wizard.append(this.renderConnections());
+    else if (this.step === 3) wizard.append(this.renderPricing());
     else wizard.append(this.renderPreview());
     wizard.append(this.renderNav());
 
@@ -184,7 +184,7 @@ export class EnergyFlowCardEditor extends HTMLElement {
   }
 
   private renderTabs(): HTMLElement {
-    const labels = [t('ed_step_devices', this.uiLang), t('ed_step_connections', this.uiLang), t('ed_step_preview', this.uiLang)];
+    const labels = [t('ed_step_devices', this.uiLang), t('ed_step_connections', this.uiLang), t('ed_step_pricing', this.uiLang), t('ed_step_preview', this.uiLang)];
     const tabs = html('div', { class: 'tabs', role: 'tablist' });
     labels.forEach((label, i) => {
       const step = (i + 1) as Step;
@@ -201,12 +201,12 @@ export class EnergyFlowCardEditor extends HTMLElement {
     back.addEventListener('click', () => this.goTo((this.step - 1) as Step));
     const next = html('button', { class: 'btn primary', type: 'button' }, t('ed_next', this.uiLang));
     next.addEventListener('click', () => this.goTo((this.step + 1) as Step));
-    nav.append(this.step > 1 ? back : html('span'), this.step < 3 ? next : html('span'));
+    nav.append(this.step > 1 ? back : html('span'), this.step < 4 ? next : html('span'));
     return nav;
   }
 
   private goTo(step: Step): void {
-    if (step < 1 || step > 3) return;
+    if (step < 1 || step > 4) return;
     this.step = step;
     this.render();
   }
@@ -635,25 +635,12 @@ export class EnergyFlowCardEditor extends HTMLElement {
   }
 
   private pricingConfig(): PricingConfig {
-    if (!this.config.pricing) this.config.pricing = { mode: 'none', currency: 'EUR' };
+    if (!this.config.pricing) {
+      this.config.pricing = this.config.demo
+        ? { mode: 'fixed', currency: 'EUR', import_price: 0.31, export_price: 0.09 }
+        : { mode: 'none', currency: 'EUR' };
+    }
     return this.config.pricing;
-  }
-
-  private suggestPriceEntity(provider: string, direction: 'import' | 'export'): string | undefined {
-    if (!this._hass) return undefined;
-    const keywords = providerKeywords(provider);
-    if (!keywords.length) return undefined;
-    const directionWords = direction === 'import'
-      ? ['import', 'buy', 'purchase', 'afname', 'inkoop', 'current', 'price']
-      : ['export', 'sell', 'return', 'terug', 'teruglever', 'feed', 'price'];
-    const candidates = Object.entries(this._hass.states)
-      .filter(([id, state]) => {
-        const friendly = String(state.attributes?.friendly_name ?? '').toLowerCase();
-        const haystack = `${id} ${friendly}`.toLowerCase();
-        return keywords.some((k) => haystack.includes(k)) && directionWords.some((k) => haystack.includes(k));
-      })
-      .map(([id]) => id);
-    return candidates[0];
   }
 
   private renderPricing(): HTMLElement {
@@ -666,7 +653,7 @@ export class EnergyFlowCardEditor extends HTMLElement {
 
     const mode = html('select');
     for (const [value, key] of [
-      ['none', 'pricing_none'], ['fixed', 'pricing_fixed'], ['entities', 'pricing_entities'], ['dynamic', 'pricing_dynamic'],
+      ['none', 'pricing_none'], ['fixed', 'pricing_fixed'], ['entities', 'pricing_entities'],
     ] as const) {
       const option = html('option', { value }, t(key, lang));
       if ((pricing.mode ?? 'none') === value) option.selected = true;
@@ -707,23 +694,6 @@ export class EnergyFlowCardEditor extends HTMLElement {
       return wrap;
     }
 
-    if (pricing.mode === 'dynamic') {
-      const provider = html('select');
-      for (const value of DYNAMIC_PROVIDERS) {
-        const option = html('option', { value }, t(`provider_${value}`, lang));
-        if ((pricing.provider ?? 'other') === value) option.selected = true;
-        provider.append(option);
-      }
-      provider.addEventListener('change', () => {
-        pricing.provider = provider.value as PricingConfig['provider'];
-        if (!pricing.import_price_entity) pricing.import_price_entity = this.suggestPriceEntity(provider.value, 'import');
-        if (!pricing.export_price_entity) pricing.export_price_entity = this.suggestPriceEntity(provider.value, 'export');
-        this.commit();
-        this.render();
-      });
-      wrap.append(this.field(t('pricing_provider', lang), provider));
-    }
-
     const importEntity = this.entityInput(pricing.import_price_entity, false, (v) => {
       if (v) pricing.import_price_entity = v; else delete pricing.import_price_entity; this.commit();
     });
@@ -734,7 +704,7 @@ export class EnergyFlowCardEditor extends HTMLElement {
     return wrap;
   }
 
-  // ----- Stap 3: Voorbeeld --------------------------------------------------------------------
+  // ----- Stap 4: Voorbeeld --------------------------------------------------------------------
 
   private renderPreview(): HTMLElement {
     const lang = this.uiLang;
@@ -787,7 +757,6 @@ export class EnergyFlowCardEditor extends HTMLElement {
       { class: 'stack' },
       html('p', { class: 'hint' }, t('ed_preview_hint', lang)),
       this.field(t('ed_layout', lang), layoutSelect),
-      this.renderPricing(),
       card,
       html('label', { class: 'check' }, demo, t('ed_demo', lang)),
     );

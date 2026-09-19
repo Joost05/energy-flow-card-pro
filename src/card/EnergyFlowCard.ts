@@ -9,7 +9,7 @@ import {
 } from '../helpers/flowHelper';
 import { HistoryPoint, bucketize, fetchHistoryBatch } from '../helpers/historyHelper';
 import { hassLanguage, t } from '../helpers/i18n';
-import { currentGridRate, formatCurrency, formatPrice, readPrices } from '../helpers/pricingHelper';
+import { currentGridRate, fetchTodayExportRevenue, formatCurrency, formatPrice, readPrices } from '../helpers/pricingHelper';
 import { applyGroupReadings, buildDisplayGraph } from '../helpers/groupHelper';
 import { formatPower, parsePower } from '../helpers/stateHelper';
 import { HOME_RADIUS, NODE_RADIUS, computeLayout } from '../layout/AutoLayout';
@@ -50,6 +50,8 @@ export class EnergyFlowCard extends HTMLElement {
   private historyBundleInFlight?: Promise<void>;
   private historyBundleFetchedAt = 0;
   private preloadTimer?: number;
+  private todayExportRevenue?: { value: number | null; fetchedAt: number };
+  private todayExportRevenueInFlight?: Promise<void>;
   private timer?: number;
   private demoStart = 0;
   private reducedMotion = false;
@@ -74,6 +76,8 @@ export class EnergyFlowCard extends HTMLElement {
     this.historyBundleInFlight = undefined;
     this.historyBundleFetchedAt = 0;
     this.cancelHistoryPreload();
+    this.todayExportRevenue = undefined;
+    this.todayExportRevenueInFlight = undefined;
     this.buildStructure();
     this.syncTimer();
     this.update();
@@ -84,6 +88,7 @@ export class EnergyFlowCard extends HTMLElement {
     if (!this.config?.demo) {
       this.update();
       this.scheduleHistoryPreload();
+      void this.ensureTodayExportRevenue();
     }
   }
 
@@ -117,6 +122,7 @@ export class EnergyFlowCard extends HTMLElement {
     if (this.config) {
       this.update();
       this.scheduleHistoryPreload();
+      void this.ensureTodayExportRevenue();
     }
   }
 
@@ -165,11 +171,12 @@ export class EnergyFlowCard extends HTMLElement {
   private buildPriceBadge(cfg: ResolvedConfig): HTMLElement {
     const prices = readPrices(cfg.pricing, cfg.demo ? undefined : this._hass);
     const currency = cfg.pricing.currency;
-    const importText = prices.importPrice === null ? '?' : formatPrice(prices.importPrice, currency, this.language);
-    const exportText = prices.exportPrice === null ? '?' : formatPrice(prices.exportPrice, currency, this.language);
+    const importText = prices.importPrice === null ? '?' : formatCurrency(prices.importPrice, currency, this.language, 2);
+    const exportText = prices.exportPrice === null ? '?' : formatCurrency(prices.exportPrice, currency, this.language, 2);
     const el = html('div', { class: 'price-badge' },
       html('span', { 'data-price-import': '' }, `↓ ${importText}`),
       html('span', { 'data-price-export': '' }, `↑ ${exportText}`),
+      html('span', { class: 'price-unit' }, '/kWh'),
     );
     return el;
   }
@@ -263,8 +270,8 @@ export class EnergyFlowCard extends HTMLElement {
     const prices = readPrices(cfg.pricing, cfg.demo ? undefined : this._hass);
     const importEl = this.shadowRoot?.querySelector('[data-price-import]');
     const exportEl = this.shadowRoot?.querySelector('[data-price-export]');
-    const importText = prices.importPrice === null ? '?' : formatPrice(prices.importPrice, cfg.pricing.currency, this.language);
-    const exportText = prices.exportPrice === null ? '?' : formatPrice(prices.exportPrice, cfg.pricing.currency, this.language);
+    const importText = prices.importPrice === null ? '?' : formatCurrency(prices.importPrice, cfg.pricing.currency, this.language, 2);
+    const exportText = prices.exportPrice === null ? '?' : formatCurrency(prices.exportPrice, cfg.pricing.currency, this.language, 2);
     if (importEl) importEl.textContent = `↓ ${importText}`;
     if (exportEl) exportEl.textContent = `↑ ${exportText}`;
   }
@@ -323,6 +330,7 @@ export class EnergyFlowCard extends HTMLElement {
     this.openNodeId = nodeId;
     this.popup.open(model, this.nodeEls.get(nodeId)?.el);
     void this.ensureHistory(nodeId);
+    if (this.config?.nodes.find((n) => n.id === nodeId)?.type === 'grid') void this.ensureTodayExportRevenue();
   }
 
   private closePopup(): void {
@@ -387,6 +395,9 @@ export class EnergyFlowCard extends HTMLElement {
           value: `${formatCurrency(rate.value, cfg.pricing.currency, lang, 3)} ${t('per_hour', lang)}`,
         });
       }
+      if (this.todayExportRevenue?.value !== null && this.todayExportRevenue?.value !== undefined) {
+        rows.push({ label: t('revenue_today', lang), value: formatCurrency(this.todayExportRevenue.value, cfg.pricing.currency, lang, 2) });
+      }
     }
 
     const powerEntity = node.config.power_entity ?? node.config.production_entity;
@@ -417,6 +428,26 @@ export class EnergyFlowCard extends HTMLElement {
       powerFormat: cfg.powerFormat,
       language: lang,
     };
+  }
+
+  private async ensureTodayExportRevenue(): Promise<void> {
+    const cfg = this.config;
+    if (!cfg || cfg.pricing.mode === 'none') return;
+    if (this.todayExportRevenue && Date.now() - this.todayExportRevenue.fetchedAt < HISTORY_TTL_MS) return;
+    if (this.todayExportRevenueInFlight) return this.todayExportRevenueInFlight;
+
+    const grid = cfg.nodes.find((n) => n.type === 'grid');
+    if (!grid) return;
+    const exportEnergyEntity = grid.config.energy_export_entity;
+    if (!cfg.demo && !exportEnergyEntity) return;
+
+    const task = (async () => {
+      const value = cfg.demo ? 1.24 : this._hass && exportEnergyEntity ? await fetchTodayExportRevenue(this._hass, exportEnergyEntity, cfg.pricing) : null;
+      this.todayExportRevenue = { value, fetchedAt: Date.now() };
+      this.refreshOpenPopup(grid.id);
+    })();
+    this.todayExportRevenueInFlight = task;
+    try { await task; } finally { if (this.todayExportRevenueInFlight === task) this.todayExportRevenueInFlight = undefined; }
   }
 
   private async ensureHistory(nodeId: string): Promise<void> {

@@ -1,6 +1,8 @@
-(()=>{
-const __mods={
-"src/card/EnergyFlowCard.js":function(require,module,exports){
+// energy-flow-card v0.9.1 - generated bundle
+(function(){
+'use strict';
+const __modules={
+"src/card/EnergyFlowCard.ts":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ConfigError = exports.EnergyFlowCard = void 0;
@@ -55,6 +57,8 @@ class EnergyFlowCard extends HTMLElement {
         this.historyBundleInFlight = undefined;
         this.historyBundleFetchedAt = 0;
         this.cancelHistoryPreload();
+        this.todayExportRevenue = undefined;
+        this.todayExportRevenueInFlight = undefined;
         this.buildStructure();
         this.syncTimer();
         this.update();
@@ -64,6 +68,7 @@ class EnergyFlowCard extends HTMLElement {
         if (!this.config?.demo) {
             this.update();
             this.scheduleHistoryPreload();
+            void this.ensureTodayExportRevenue();
         }
     }
     get hass() {
@@ -91,6 +96,7 @@ class EnergyFlowCard extends HTMLElement {
         if (this.config) {
             this.update();
             this.scheduleHistoryPreload();
+            void this.ensureTodayExportRevenue();
         }
     }
     disconnectedCallback() {
@@ -132,9 +138,9 @@ class EnergyFlowCard extends HTMLElement {
     buildPriceBadge(cfg) {
         const prices = (0, pricingHelper_1.readPrices)(cfg.pricing, cfg.demo ? undefined : this._hass);
         const currency = cfg.pricing.currency;
-        const importText = prices.importPrice === null ? '?' : (0, pricingHelper_1.formatPrice)(prices.importPrice, currency, this.language);
-        const exportText = prices.exportPrice === null ? '?' : (0, pricingHelper_1.formatPrice)(prices.exportPrice, currency, this.language);
-        const el = (0, dom_1.html)('div', { class: 'price-badge' }, (0, dom_1.html)('span', { 'data-price-import': '' }, `↓ ${importText}`), (0, dom_1.html)('span', { 'data-price-export': '' }, `↑ ${exportText}`));
+        const importText = prices.importPrice === null ? '?' : (0, pricingHelper_1.formatCurrency)(prices.importPrice, currency, this.language, 2);
+        const exportText = prices.exportPrice === null ? '?' : (0, pricingHelper_1.formatCurrency)(prices.exportPrice, currency, this.language, 2);
+        const el = (0, dom_1.html)('div', { class: 'price-badge' }, (0, dom_1.html)('span', { 'data-price-import': '' }, `↓ ${importText}`), (0, dom_1.html)('span', { 'data-price-export': '' }, `↑ ${exportText}`), (0, dom_1.html)('span', { class: 'price-unit' }, '/kWh'));
         return el;
     }
     buildFlowSvg(cfg) {
@@ -217,8 +223,8 @@ class EnergyFlowCard extends HTMLElement {
         const prices = (0, pricingHelper_1.readPrices)(cfg.pricing, cfg.demo ? undefined : this._hass);
         const importEl = this.shadowRoot?.querySelector('[data-price-import]');
         const exportEl = this.shadowRoot?.querySelector('[data-price-export]');
-        const importText = prices.importPrice === null ? '?' : (0, pricingHelper_1.formatPrice)(prices.importPrice, cfg.pricing.currency, this.language);
-        const exportText = prices.exportPrice === null ? '?' : (0, pricingHelper_1.formatPrice)(prices.exportPrice, cfg.pricing.currency, this.language);
+        const importText = prices.importPrice === null ? '?' : (0, pricingHelper_1.formatCurrency)(prices.importPrice, cfg.pricing.currency, this.language, 2);
+        const exportText = prices.exportPrice === null ? '?' : (0, pricingHelper_1.formatCurrency)(prices.exportPrice, cfg.pricing.currency, this.language, 2);
         if (importEl)
             importEl.textContent = `↓ ${importText}`;
         if (exportEl)
@@ -276,6 +282,8 @@ class EnergyFlowCard extends HTMLElement {
         this.openNodeId = nodeId;
         this.popup.open(model, this.nodeEls.get(nodeId)?.el);
         void this.ensureHistory(nodeId);
+        if (this.config?.nodes.find((n) => n.id === nodeId)?.type === 'grid')
+            void this.ensureTodayExportRevenue();
     }
     closePopup() {
         if (this.popup.isOpen)
@@ -344,6 +352,9 @@ class EnergyFlowCard extends HTMLElement {
                     value: `${(0, pricingHelper_1.formatCurrency)(rate.value, cfg.pricing.currency, lang, 3)} ${(0, i18n_1.t)('per_hour', lang)}`,
                 });
             }
+            if (this.todayExportRevenue?.value !== null && this.todayExportRevenue?.value !== undefined) {
+                rows.push({ label: (0, i18n_1.t)('revenue_today', lang), value: (0, pricingHelper_1.formatCurrency)(this.todayExportRevenue.value, cfg.pricing.currency, lang, 2) });
+            }
         }
         const powerEntity = node.config.power_entity ?? node.config.production_entity;
         const computedHome = node.role === 'home' && !node.config.power_entity;
@@ -367,6 +378,34 @@ class EnergyFlowCard extends HTMLElement {
             powerFormat: cfg.powerFormat,
             language: lang,
         };
+    }
+    async ensureTodayExportRevenue() {
+        const cfg = this.config;
+        if (!cfg || cfg.pricing.mode === 'none')
+            return;
+        if (this.todayExportRevenue && Date.now() - this.todayExportRevenue.fetchedAt < HISTORY_TTL_MS)
+            return;
+        if (this.todayExportRevenueInFlight)
+            return this.todayExportRevenueInFlight;
+        const grid = cfg.nodes.find((n) => n.type === 'grid');
+        if (!grid)
+            return;
+        const exportEnergyEntity = grid.config.energy_export_entity;
+        if (!cfg.demo && !exportEnergyEntity)
+            return;
+        const task = (async () => {
+            const value = cfg.demo ? 1.24 : this._hass && exportEnergyEntity ? await (0, pricingHelper_1.fetchTodayExportRevenue)(this._hass, exportEnergyEntity, cfg.pricing) : null;
+            this.todayExportRevenue = { value, fetchedAt: Date.now() };
+            this.refreshOpenPopup(grid.id);
+        })();
+        this.todayExportRevenueInFlight = task;
+        try {
+            await task;
+        }
+        finally {
+            if (this.todayExportRevenueInFlight === task)
+                this.todayExportRevenueInFlight = undefined;
+        }
     }
     async ensureHistory(nodeId) {
         const cfg = this.config;
@@ -639,7 +678,7 @@ function labelPositionFor(node, y, homeY, straight) {
 }
 
 },
-"src/card/styles.js":function(require,module,exports){
+"src/card/styles.ts":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.styles = void 0;
@@ -667,6 +706,8 @@ ha-card.fallback {
 .title { padding: 16px 16px 0; font-size: 16px; font-weight: 500; }
 .stage { position: relative; padding: 10px 12px 18px; min-height: 0; }
 .flow { display: block; width: 100%; max-width: 860px; height: auto; margin: 0 auto; }
+
+.price-unit { color: var(--secondary-text-color, #727272); margin-left: 2px; }
 
 .badge {
   position: absolute; top: 10px; left: 12px; z-index: 1;
@@ -804,7 +845,7 @@ ha-card.fallback {
 `;
 
 },
-"src/config/CardConfig.js":function(require,module,exports){
+"src/config/CardConfig.ts":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ConfigError = void 0;
@@ -894,25 +935,21 @@ function parsePricing(raw) {
         return { mode: 'none', currency: 'EUR' };
     if (!isRecord(raw))
         throw new ConfigError('"pricing" moet een object zijn.');
-    const mode = (raw.mode ?? 'none');
-    if (!['none', 'fixed', 'entities', 'dynamic'].includes(mode)) {
-        throw new ConfigError('"pricing.mode" moet "none", "fixed", "entities" of "dynamic" zijn.');
+    const rawMode = typeof raw.mode === 'string' ? raw.mode : 'none';
+    const normalizedMode = rawMode === 'dynamic' ? 'entities' : rawMode;
+    if (!['none', 'fixed', 'entities'].includes(normalizedMode)) {
+        throw new ConfigError('"pricing.mode" moet "none", "fixed" of "entities" zijn.');
     }
     const currency = typeof raw.currency === 'string' && raw.currency.trim() ? raw.currency.trim().toUpperCase() : 'EUR';
-    const provider = typeof raw.provider === 'string' ? raw.provider : undefined;
-    if (provider && !['frank', 'zonneplan', 'tibber', 'anwb', 'nextenergy', 'nordpool', 'other'].includes(provider)) {
-        throw new ConfigError('"pricing.provider" is onbekend.');
-    }
     const importPriceEntity = typeof raw.import_price_entity === 'string' && raw.import_price_entity.trim() ? raw.import_price_entity.trim() : undefined;
     const exportPriceEntity = typeof raw.export_price_entity === 'string' && raw.export_price_entity.trim() ? raw.export_price_entity.trim() : undefined;
     return {
-        mode,
+        mode: normalizedMode,
         currency,
         importPrice: optionalPrice(raw.import_price, 'pricing.import_price'),
         exportPrice: optionalPrice(raw.export_price, 'pricing.export_price'),
         importPriceEntity,
         exportPriceEntity,
-        provider,
     };
 }
 function parseNodes(raw) {
@@ -1101,7 +1138,7 @@ function parseLayout(raw) {
 }
 
 },
-"src/demo/DemoEngine.js":function(require,module,exports){
+"src/demo/DemoEngine.ts":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.demoReadings = demoReadings;
@@ -1206,13 +1243,12 @@ function demoReadings(nodes, t) {
 }
 
 },
-"src/editor/EnergyFlowCardEditor.js":function(require,module,exports){
+"src/editor/EnergyFlowCardEditor.ts":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EnergyFlowCardEditor = void 0;
 const CardConfig_1 = require("../config/CardConfig");
 const i18n_1 = require("../helpers/i18n");
-const pricingHelper_1 = require("../helpers/pricingHelper");
 const Node_1 = require("../models/Node");
 const dom_1 = require("../renderer/dom");
 const NodeType_1 = require("../types/NodeType");
@@ -1285,7 +1321,7 @@ function stable(value) {
         : v);
 }
 /**
- * Wizard in drie stappen: 1 Apparaten, 2 Verbindingen, 3 Voorbeeld.
+ * Wizard in vier stappen: 1 Apparaten, 2 Verbindingen, 3 Prijzen, 4 Voorbeeld.
  * De wizard schrijft gewone kaart-YAML (inclusief gegenereerde ids en connections);
  * wie liever direct YAML schrijft, kan de wizard gewoon overslaan.
  */
@@ -1364,6 +1400,8 @@ class EnergyFlowCardEditor extends HTMLElement {
             wizard.append(this.renderDevices());
         else if (this.step === 2)
             wizard.append(this.renderConnections());
+        else if (this.step === 3)
+            wizard.append(this.renderPricing());
         else
             wizard.append(this.renderPreview());
         wizard.append(this.renderNav());
@@ -1379,7 +1417,7 @@ class EnergyFlowCardEditor extends HTMLElement {
         });
     }
     renderTabs() {
-        const labels = [(0, i18n_1.t)('ed_step_devices', this.uiLang), (0, i18n_1.t)('ed_step_connections', this.uiLang), (0, i18n_1.t)('ed_step_preview', this.uiLang)];
+        const labels = [(0, i18n_1.t)('ed_step_devices', this.uiLang), (0, i18n_1.t)('ed_step_connections', this.uiLang), (0, i18n_1.t)('ed_step_pricing', this.uiLang), (0, i18n_1.t)('ed_step_preview', this.uiLang)];
         const tabs = (0, dom_1.html)('div', { class: 'tabs', role: 'tablist' });
         labels.forEach((label, i) => {
             const step = (i + 1);
@@ -1395,11 +1433,11 @@ class EnergyFlowCardEditor extends HTMLElement {
         back.addEventListener('click', () => this.goTo((this.step - 1)));
         const next = (0, dom_1.html)('button', { class: 'btn primary', type: 'button' }, (0, i18n_1.t)('ed_next', this.uiLang));
         next.addEventListener('click', () => this.goTo((this.step + 1)));
-        nav.append(this.step > 1 ? back : (0, dom_1.html)('span'), this.step < 3 ? next : (0, dom_1.html)('span'));
+        nav.append(this.step > 1 ? back : (0, dom_1.html)('span'), this.step < 4 ? next : (0, dom_1.html)('span'));
         return nav;
     }
     goTo(step) {
-        if (step < 1 || step > 3)
+        if (step < 1 || step > 4)
             return;
         this.step = step;
         this.render();
@@ -1812,27 +1850,12 @@ class EnergyFlowCardEditor extends HTMLElement {
         this.render();
     }
     pricingConfig() {
-        if (!this.config.pricing)
-            this.config.pricing = { mode: 'none', currency: 'EUR' };
+        if (!this.config.pricing) {
+            this.config.pricing = this.config.demo
+                ? { mode: 'fixed', currency: 'EUR', import_price: 0.31, export_price: 0.09 }
+                : { mode: 'none', currency: 'EUR' };
+        }
         return this.config.pricing;
-    }
-    suggestPriceEntity(provider, direction) {
-        if (!this._hass)
-            return undefined;
-        const keywords = (0, pricingHelper_1.providerKeywords)(provider);
-        if (!keywords.length)
-            return undefined;
-        const directionWords = direction === 'import'
-            ? ['import', 'buy', 'purchase', 'afname', 'inkoop', 'current', 'price']
-            : ['export', 'sell', 'return', 'terug', 'teruglever', 'feed', 'price'];
-        const candidates = Object.entries(this._hass.states)
-            .filter(([id, state]) => {
-            const friendly = String(state.attributes?.friendly_name ?? '').toLowerCase();
-            const haystack = `${id} ${friendly}`.toLowerCase();
-            return keywords.some((k) => haystack.includes(k)) && directionWords.some((k) => haystack.includes(k));
-        })
-            .map(([id]) => id);
-        return candidates[0];
     }
     renderPricing() {
         const lang = this.uiLang;
@@ -1840,7 +1863,7 @@ class EnergyFlowCardEditor extends HTMLElement {
         const wrap = (0, dom_1.html)('div', { class: 'device' }, (0, dom_1.html)('h3', {}, (0, i18n_1.t)('ed_pricing', lang)), (0, dom_1.html)('p', { class: 'hint' }, (0, i18n_1.t)('ed_pricing_hint', lang)));
         const mode = (0, dom_1.html)('select');
         for (const [value, key] of [
-            ['none', 'pricing_none'], ['fixed', 'pricing_fixed'], ['entities', 'pricing_entities'], ['dynamic', 'pricing_dynamic'],
+            ['none', 'pricing_none'], ['fixed', 'pricing_fixed'], ['entities', 'pricing_entities'],
         ]) {
             const option = (0, dom_1.html)('option', { value }, (0, i18n_1.t)(key, lang));
             if ((pricing.mode ?? 'none') === value)
@@ -1883,25 +1906,6 @@ class EnergyFlowCardEditor extends HTMLElement {
             wrap.append((0, dom_1.html)('div', { class: 'row' }, fixedField('import_price', (0, i18n_1.t)('pricing_import', lang)), fixedField('export_price', (0, i18n_1.t)('pricing_export', lang))));
             return wrap;
         }
-        if (pricing.mode === 'dynamic') {
-            const provider = (0, dom_1.html)('select');
-            for (const value of pricingHelper_1.DYNAMIC_PROVIDERS) {
-                const option = (0, dom_1.html)('option', { value }, (0, i18n_1.t)(`provider_${value}`, lang));
-                if ((pricing.provider ?? 'other') === value)
-                    option.selected = true;
-                provider.append(option);
-            }
-            provider.addEventListener('change', () => {
-                pricing.provider = provider.value;
-                if (!pricing.import_price_entity)
-                    pricing.import_price_entity = this.suggestPriceEntity(provider.value, 'import');
-                if (!pricing.export_price_entity)
-                    pricing.export_price_entity = this.suggestPriceEntity(provider.value, 'export');
-                this.commit();
-                this.render();
-            });
-            wrap.append(this.field((0, i18n_1.t)('pricing_provider', lang), provider));
-        }
         const importEntity = this.entityInput(pricing.import_price_entity, false, (v) => {
             if (v)
                 pricing.import_price_entity = v;
@@ -1919,7 +1923,7 @@ class EnergyFlowCardEditor extends HTMLElement {
         wrap.append(this.field((0, i18n_1.t)('pricing_import_entity', lang), importEntity), this.field((0, i18n_1.t)('pricing_export_entity', lang), exportEntity));
         return wrap;
     }
-    // ----- Stap 3: Voorbeeld --------------------------------------------------------------------
+    // ----- Stap 4: Voorbeeld --------------------------------------------------------------------
     renderPreview() {
         const lang = this.uiLang;
         const resolved = this.resolve();
@@ -1974,7 +1978,7 @@ class EnergyFlowCardEditor extends HTMLElement {
         if (this._hass)
             card.hass = this._hass;
         this.preview = card;
-        return (0, dom_1.html)('div', { class: 'stack' }, (0, dom_1.html)('p', { class: 'hint' }, (0, i18n_1.t)('ed_preview_hint', lang)), this.field((0, i18n_1.t)('ed_layout', lang), layoutSelect), this.renderPricing(), card, (0, dom_1.html)('label', { class: 'check' }, demo, (0, i18n_1.t)('ed_demo', lang)));
+        return (0, dom_1.html)('div', { class: 'stack' }, (0, dom_1.html)('p', { class: 'hint' }, (0, i18n_1.t)('ed_preview_hint', lang)), this.field((0, i18n_1.t)('ed_layout', lang), layoutSelect), card, (0, dom_1.html)('label', { class: 'check' }, demo, (0, i18n_1.t)('ed_demo', lang)));
     }
     errorBox(message) {
         return (0, dom_1.html)('div', { class: 'error' }, `${(0, i18n_1.t)('ed_fix_first', this.uiLang)} ${message}`);
@@ -1983,7 +1987,7 @@ class EnergyFlowCardEditor extends HTMLElement {
 exports.EnergyFlowCardEditor = EnergyFlowCardEditor;
 
 },
-"src/helpers/flowHelper.js":function(require,module,exports){
+"src/helpers/flowHelper.ts":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.flowToHome = flowToHome;
@@ -2207,7 +2211,7 @@ function applyBackupReadings(nodes, connections, readings, demo) {
 }
 
 },
-"src/helpers/groupHelper.js":function(require,module,exports){
+"src/helpers/groupHelper.ts":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.groupedGroups = groupedGroups;
@@ -2280,7 +2284,7 @@ function applyGroupReadings(groups, groupNodes, readings) {
 }
 
 },
-"src/helpers/historyHelper.js":function(require,module,exports){
+"src/helpers/historyHelper.ts":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.fetchHistoryBatch = fetchHistoryBatch;
@@ -2368,7 +2372,7 @@ function unitFactor(unit) {
 }
 
 },
-"src/helpers/i18n.js":function(require,module,exports){
+"src/helpers/i18n.ts":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.t = t;
@@ -2430,6 +2434,7 @@ const nl = {
     type_backup: "Backup",
     ed_step_devices: "Apparaten",
     ed_step_connections: "Verbindingen",
+    ed_step_pricing: "Prijzen",
     ed_step_preview: "Voorbeeld",
     ed_home_auto: "De woning wordt automatisch toegevoegd. Voeg de apparaten toe die energie leveren of gebruiken.",
     ed_add_device: "Apparaat toevoegen",
@@ -2489,29 +2494,21 @@ const nl = {
     ed_layout_circle: "Rond: vaste plekken rond de woning",
     ed_layout_straight: "Recht: van boven naar beneden",
     ed_pricing: "Energieprijzen",
-    ed_pricing_hint: "Optioneel: gebruik vaste tarieven of Home Assistant-prijssensoren. Leverancierspresets halen zelf geen data op.",
+    ed_pricing_hint: "Optioneel: gebruik vaste tarieven of prijsentiteiten uit Home Assistant-integraties.",
     pricing_none: "Geen prijsberekening",
     pricing_fixed: "Vaste tarieven",
     pricing_entities: "Home Assistant-prijssensoren",
-    pricing_dynamic: "Dynamisch contract",
     pricing_mode: "Prijsmodel",
-    pricing_provider: "Leverancier / bron",
     pricing_import: "Importprijs",
     pricing_export: "Exportprijs",
     pricing_import_entity: "Import-prijssensor",
     pricing_export_entity: "Export-prijssensor",
     pricing_currency: "Valuta",
-    provider_frank: "Frank Energie",
-    provider_zonneplan: "Zonneplan",
-    provider_tibber: "Tibber",
-    provider_anwb: "ANWB Energie",
-    provider_nextenergy: "NextEnergy",
-    provider_nordpool: "Nord Pool",
-    provider_other: "Andere leverancier",
     current_import_price: "Huidige importprijs",
     current_export_price: "Huidige exportprijs",
     current_cost_rate: "Kosten op dit moment",
     current_revenue_rate: "Opbrengst op dit moment",
+    revenue_today: "Opbrengst vandaag",
     per_hour: "per uur",
 };
 const en = {
@@ -2570,6 +2567,7 @@ const en = {
     type_backup: "Backup",
     ed_step_devices: "Devices",
     ed_step_connections: "Connections",
+    ed_step_pricing: "Prices",
     ed_step_preview: "Preview",
     ed_home_auto: "Home is added automatically. Add the devices that supply or use energy.",
     ed_add_device: "Add device",
@@ -2629,29 +2627,21 @@ const en = {
     ed_layout_circle: "Round: fixed spots around the home",
     ed_layout_straight: "Straight: top to bottom",
     ed_pricing: "Energy prices",
-    ed_pricing_hint: "Optional: use fixed rates or Home Assistant price entities. Supplier presets do not fetch data themselves.",
+    ed_pricing_hint: "Optional: use fixed rates or price entities provided by Home Assistant integrations.",
     pricing_none: "No price calculation",
     pricing_fixed: "Fixed rates",
     pricing_entities: "Home Assistant price entities",
-    pricing_dynamic: "Dynamic contract",
     pricing_mode: "Price model",
-    pricing_provider: "Supplier / source",
     pricing_import: "Import price",
     pricing_export: "Export price",
     pricing_import_entity: "Import price entity",
     pricing_export_entity: "Export price entity",
     pricing_currency: "Currency",
-    provider_frank: "Frank Energie",
-    provider_zonneplan: "Zonneplan",
-    provider_tibber: "Tibber",
-    provider_anwb: "ANWB Energy",
-    provider_nextenergy: "NextEnergy",
-    provider_nordpool: "Nord Pool",
-    provider_other: "Other supplier",
     current_import_price: "Current import price",
     current_export_price: "Current export price",
     current_cost_rate: "Current cost rate",
     current_revenue_rate: "Current revenue rate",
+    revenue_today: "Revenue today",
     per_hour: "per hour",
 };
 /**
@@ -2668,31 +2658,19 @@ function hassLanguage(hass) {
 }
 
 },
-"src/helpers/pricingHelper.js":function(require,module,exports){
+"src/helpers/pricingHelper.ts":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DYNAMIC_PROVIDERS = void 0;
 exports.readPrices = readPrices;
 exports.currentGridRate = currentGridRate;
 exports.formatCurrency = formatCurrency;
 exports.formatPrice = formatPrice;
-exports.providerKeywords = providerKeywords;
-/** Supported supplier labels. Presets never call supplier APIs; they only guide entity selection. */
-exports.DYNAMIC_PROVIDERS = [
-    'frank',
-    'zonneplan',
-    'tibber',
-    'anwb',
-    'nextenergy',
-    'nordpool',
-    'other',
-];
+exports.fetchTodayExportRevenue = fetchTodayExportRevenue;
 function parsePriceState(state, unit) {
     const value = Number(String(state).replace(',', '.'));
     if (!Number.isFinite(value))
         return null;
     const u = typeof unit === 'string' ? unit.trim().toLowerCase() : '';
-    // Normalize common cent/kWh units to currency/kWh.
     if (u.includes('ct/kwh') || u.includes('cent/kwh') || u.includes('c/kwh'))
         return value / 100;
     return value;
@@ -2709,7 +2687,7 @@ function readPrices(config, hass) {
     if (config.mode === 'fixed') {
         return { importPrice: config.importPrice ?? null, exportPrice: config.exportPrice ?? null };
     }
-    if (config.mode === 'entities' || config.mode === 'dynamic') {
+    if (config.mode === 'entities') {
         return {
             importPrice: entityPrice(hass, config.importPriceEntity),
             exportPrice: entityPrice(hass, config.exportPriceEntity),
@@ -2717,22 +2695,17 @@ function readPrices(config, hass) {
     }
     return { importPrice: null, exportPrice: null };
 }
-/** Cost/revenue rate in currency per hour from signed grid power. Positive grid = import, negative = export. */
 function currentGridRate(watts, prices) {
     if (watts === null || watts === 0)
         return { kind: 'none', value: 0 };
-    if (watts > 0) {
+    if (watts > 0)
         return { kind: 'cost', value: prices.importPrice === null ? null : (watts / 1000) * prices.importPrice };
-    }
     return { kind: 'revenue', value: prices.exportPrice === null ? null : (Math.abs(watts) / 1000) * prices.exportPrice };
 }
 function formatCurrency(value, currency = 'EUR', language, digits = 2) {
     try {
         return new Intl.NumberFormat(language || undefined, {
-            style: 'currency',
-            currency,
-            minimumFractionDigits: digits,
-            maximumFractionDigits: digits,
+            style: 'currency', currency, minimumFractionDigits: digits, maximumFractionDigits: digits,
         }).format(value);
     }
     catch {
@@ -2740,23 +2713,104 @@ function formatCurrency(value, currency = 'EUR', language, digits = 2) {
     }
 }
 function formatPrice(value, currency = 'EUR', language) {
-    return `${formatCurrency(value, currency, language, 4)}/kWh`;
+    return `${formatCurrency(value, currency, language, 2)}/kWh`;
 }
-/** Entity-name hints used by the dynamic-provider UI for sorting/suggestions only. */
-function providerKeywords(provider) {
-    switch (provider) {
-        case 'frank': return ['frank'];
-        case 'zonneplan': return ['zonneplan'];
-        case 'tibber': return ['tibber'];
-        case 'anwb': return ['anwb'];
-        case 'nextenergy': return ['nextenergy', 'next_energy'];
-        case 'nordpool': return ['nordpool', 'nord_pool'];
-        default: return [];
+function energyToKWh(value, unit) {
+    const u = typeof unit === 'string' ? unit.trim().toLowerCase() : '';
+    if (u === 'wh')
+        return value / 1000;
+    if (u === 'mwh')
+        return value * 1000;
+    return value;
+}
+/** Estimate today's feed-in revenue from the configured cumulative export-energy sensor.
+ * For price entities, historic price changes are used when available.
+ */
+async function fetchTodayExportRevenue(hass, exportEnergyEntity, pricing, now = Date.now()) {
+    if (!hass.callApi || pricing.mode === 'none')
+        return null;
+    const energyState = hass.states[exportEnergyEntity];
+    if (!energyState || energyState.state === 'unknown' || energyState.state === 'unavailable')
+        return null;
+    const startDate = new Date(now);
+    startDate.setHours(0, 0, 0, 0);
+    const start = startDate.getTime();
+    const ids = [exportEnergyEntity];
+    if (pricing.mode === 'entities' && pricing.exportPriceEntity)
+        ids.push(pricing.exportPriceEntity);
+    const path = `history/period/${new Date(start).toISOString()}?filter_entity_id=${encodeURIComponent(ids.join(','))}` +
+        `&end_time=${encodeURIComponent(new Date(now).toISOString())}&minimal_response&no_attributes&significant_changes_only`;
+    try {
+        const response = await hass.callApi('GET', path);
+        const byId = new Map();
+        for (let i = 0; i < (response ?? []).length; i++) {
+            const arr = response?.[i] ?? [];
+            const id = arr.find((x) => x.entity_id)?.entity_id ?? ids[i];
+            if (id)
+                byId.set(id, arr);
+        }
+        const energyUnit = energyState.attributes?.unit_of_measurement;
+        const energyPoints = [];
+        for (const s of byId.get(exportEnergyEntity) ?? []) {
+            const n = Number(String(s.state).replace(',', '.'));
+            const stamp = s.last_changed ?? s.last_updated;
+            if (!Number.isFinite(n) || !stamp)
+                continue;
+            energyPoints.push({ t: Date.parse(stamp), v: energyToKWh(n, energyUnit) });
+        }
+        const currentEnergy = Number(String(energyState.state).replace(',', '.'));
+        if (Number.isFinite(currentEnergy))
+            energyPoints.push({ t: now, v: energyToKWh(currentEnergy, energyUnit) });
+        energyPoints.sort((a, b) => a.t - b.t);
+        if (energyPoints.length < 2)
+            return null;
+        const fixedPrice = pricing.mode === 'fixed' ? pricing.exportPrice ?? null : null;
+        const currentPrice = pricing.mode === 'entities' ? entityPrice(hass, pricing.exportPriceEntity) : fixedPrice;
+        if (currentPrice === null)
+            return null;
+        const pricePoints = [];
+        if (pricing.mode === 'entities' && pricing.exportPriceEntity) {
+            const unit = hass.states[pricing.exportPriceEntity]?.attributes?.unit_of_measurement;
+            for (const s of byId.get(pricing.exportPriceEntity) ?? []) {
+                const v = parsePriceState(s.state, unit);
+                const stamp = s.last_changed ?? s.last_updated;
+                if (v === null || !stamp)
+                    continue;
+                pricePoints.push({ t: Date.parse(stamp), v });
+            }
+            pricePoints.sort((a, b) => a.t - b.t);
+        }
+        const priceAt = (t) => {
+            if (fixedPrice !== null)
+                return fixedPrice;
+            let found = currentPrice;
+            for (const p of pricePoints) {
+                if (p.t > t)
+                    break;
+                found = p.v;
+            }
+            return found;
+        };
+        let revenue = 0;
+        for (let i = 1; i < energyPoints.length; i++) {
+            const prev = energyPoints[i - 1];
+            const cur = energyPoints[i];
+            let delta = cur.v - prev.v;
+            if (delta < 0)
+                delta = cur.v; // total_increasing reset
+            if (delta <= 0)
+                continue;
+            revenue += delta * priceAt(cur.t);
+        }
+        return revenue;
+    }
+    catch {
+        return null;
     }
 }
 
 },
-"src/helpers/stateHelper.js":function(require,module,exports){
+"src/helpers/stateHelper.ts":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.parsePower = parsePower;
@@ -2849,7 +2903,7 @@ function round(value, decimals) {
 }
 
 },
-"src/index.js":function(require,module,exports){
+"src/index.ts":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const EnergyFlowCard_1 = require("./card/EnergyFlowCard");
@@ -2867,10 +2921,10 @@ if (!window.customCards.some((c) => c.type === 'energy-flow-card')) {
         preview: true,
     });
 }
-console.info('%c ENERGY-FLOW-CARD %c 0.9.0 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
+console.info('%c ENERGY-FLOW-CARD %c 0.9.1 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
 
 },
-"src/layout/AutoLayout.js":function(require,module,exports){
+"src/layout/AutoLayout.ts":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.STRAIGHT_ROW_GAP = exports.HOME_RADIUS = exports.NODE_RADIUS = void 0;
@@ -3296,7 +3350,7 @@ function straightLayout(nodes, auto, links) {
 }
 
 },
-"src/models/Connection.js":function(require,module,exports){
+"src/models/Connection.ts":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createConnection = createConnection;
@@ -3349,7 +3403,7 @@ function parentOf(node, nodes) {
 }
 
 },
-"src/models/Node.js":function(require,module,exports){
+"src/models/Node.ts":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createNode = createNode;
@@ -3433,7 +3487,7 @@ function fieldLabelKey(field, type) {
 }
 
 },
-"src/renderer/ConnectionRenderer.js":function(require,module,exports){
+"src/renderer/ConnectionRenderer.ts":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.computeGeometry = computeGeometry;
@@ -3617,7 +3671,7 @@ function createConnectionElement(conn, from, to, curved, color, orthogonal = fal
 }
 
 },
-"src/renderer/NodeRenderer.js":function(require,module,exports){
+"src/renderer/NodeRenderer.ts":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.displayNameOf = displayNameOf;
@@ -3790,7 +3844,7 @@ labelPosition = 'below') {
 }
 
 },
-"src/renderer/PopupRenderer.js":function(require,module,exports){
+"src/renderer/PopupRenderer.ts":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Popup = void 0;
@@ -3903,7 +3957,7 @@ class Popup {
 exports.Popup = Popup;
 
 },
-"src/renderer/dom.js":function(require,module,exports){
+"src/renderer/dom.ts":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.svg = svg;
@@ -3942,7 +3996,7 @@ function setAttr(el, name, value) {
 }
 
 },
-"src/types/EntityStatus.js":function(require,module,exports){
+"src/types/EntityStatus.ts":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EntityStatus = void 0;
@@ -3982,7 +4036,7 @@ function hasValue(status) {
 }
 
 },
-"src/types/NodeType.js":function(require,module,exports){
+"src/types/NodeType.ts":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TYPES_WITH_DEFAULT_ICON = exports.NODE_TYPES = void 0;
@@ -4047,14 +4101,30 @@ function roleOf(type) {
 exports.TYPES_WITH_DEFAULT_ICON = new Set(['home', 'grid', 'solar', 'battery', 'backup']);
 
 },
-"src/types/hass.js":function(require,module,exports){
+"src/types/hass.ts":function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 
 },
 };
 const __cache={};
-function __norm(p){const a=[];for(const x of p.split("/")){if(!x||x===".")continue;if(x==="..")a.pop();else a.push(x);}return a.join("/");}
-function __req(id,from){let target=id;if(id.startsWith(".")){const base=from.slice(0,from.lastIndexOf("/")+1);target=__norm(base+id);}else target=__norm(id);if(!target.endsWith(".js")) target+=".js";const key=target;if(__cache[key])return __cache[key].exports;const fn=__mods[key];if(!fn)throw new Error("Module not found: "+key+" from "+from);const m={exports:{}};__cache[key]=m;fn((x)=>__req(x,key),m,m.exports);return m.exports;}
-__req("src/index.js","src/index.js");
+function __norm(parts){const out=[];for(const p of parts){if(!p||p==='.')continue;if(p==='..')out.pop();else out.push(p);}return out.join('/');}
+function __resolve(spec,base){
+  if(!spec.startsWith('.')) return spec;
+  const dir=base.split('/').slice(0,-1);
+  const raw=__norm(dir.concat(spec.split('/')));
+  const candidates=[raw,raw+'.ts',raw+'/index.ts'];
+  for(const c of candidates) if(__modules[c]) return c;
+  throw new Error('Cannot resolve '+spec+' from '+base);
+}
+function __require(spec,base=''){
+  const id=base?__resolve(spec,base):spec;
+  if(!__modules[id]) throw new Error('External module not bundled: '+id);
+  if(__cache[id]) return __cache[id].exports;
+  const module={exports:{}}; __cache[id]=module;
+  const localRequire=(s)=>__require(s,id);
+  __modules[id](localRequire,module,module.exports);
+  return module.exports;
+}
+__require('src/index.ts');
 })();
