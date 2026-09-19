@@ -20,7 +20,7 @@ ha-card.fallback {
 }
 
 .title { padding: 16px 16px 0; font-size: 16px; font-weight: 500; }
-.stage { position: relative; padding: 10px 12px 18px; min-height: 470px; }
+.stage { position: relative; padding: 10px 12px 18px; min-height: 0; }
 .flow { display: block; width: 100%; max-width: 860px; height: auto; margin: 0 auto; }
 
 .badge {
@@ -139,7 +139,7 @@ ha-card.fallback {
 .popup-note { margin: 12px 0 0; font-size: 13px; color: var(--secondary-text-color, #727272); }
 
 @media (max-width: 600px) {
-  .stage { min-height: 420px; padding-inline: 6px; }
+  .stage { min-height: 0; padding-inline: 6px; }
   .popup { padding: 8px; }
   .popup-panel { width: calc(100vw - 16px); max-height: calc(100vh - 16px); border-radius: 12px; padding: 14px; }
 }

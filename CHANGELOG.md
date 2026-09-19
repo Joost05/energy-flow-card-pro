@@ -1,3 +1,11 @@
+## 0.8.1
+
+- Verwijderd vaste minimale kaarthoogte; Flow-layout past nu echt op de inhoud.
+- Kleinere maximale boven- en ondermarge rond de nodes.
+- Backup-takken krijgen een eigen kolom zodat verbindingen niet door gewone verbruikers lopen.
+- Apparaten achter een backup worden verticaal onder elkaar gestapeld.
+- Bestaande 0.8 wrapping van maximaal vijf gewone verbruikers per rij blijft behouden.
+
 # Changelog
 
 

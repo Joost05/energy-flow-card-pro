@@ -317,7 +317,7 @@ describe('Flow layout v0.8 adaptief', () => {
     assert.ok(Math.max(...counts.values()) <= 5, `te veel nodes op één rij: ${Math.max(...counts.values())}`);
   });
 
-  it('reserveert een aparte rij voor apparaten achter een backup zonder overlap', () => {
+  it('zet een backup in een eigen kolom en stackt de apparaten er verticaal onder', () => {
     const l = flow(4, [
       { name: 'Backup', type: 'backup' },
       { name: 'Server', type: 'consumer', connected_to: 'Backup' },
@@ -326,7 +326,7 @@ describe('Flow layout v0.8 adaptief', () => {
     const b = l.positions.get('backup')!;
     const s = l.positions.get('server')!;
     const n = l.positions.get('nas')!;
-    assert.ok(s.y > b.y && n.y === s.y);
-    assert.ok(Math.abs((s.x + n.x) / 2 - b.x) < 1);
+    assert.ok(s.y > b.y && n.y > s.y, 'backup-kinderen staan onder elkaar');
+    assert.ok(Math.abs(s.x - b.x) < 1 && Math.abs(n.x - b.x) < 1, 'de stack blijft in dezelfde kolom');
   });
 });

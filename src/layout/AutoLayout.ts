@@ -274,42 +274,21 @@ function flowLayout(nodes: readonly EnergyNode[], auto: readonly EnergyNode[], l
   const MAX_ROW_SLOTS = 5;
   const MIN_WIDTH = 520;
   const H_MARGIN = 72;
-  const V_MARGIN = 42;
+  const V_MARGIN = 26;
   const LABEL_BOTTOM = 44;
   const LABEL_TOP = 24;
   const SIDE_LABEL = 74;
 
-  type FlowItem = { node: EnergyNode; children: EnergyNode[]; slots: number };
-  const items: FlowItem[] = [
-    ...direct.map((node) => ({ node, children: [], slots: 1 })),
-    ...backups.map((node) => {
-      const children = behind.get(node.id) ?? [];
-      return { node, children, slots: Math.max(1, children.length) };
-    }),
-  ];
+  // v0.8.1: gewone verbruikers en backup-takken krijgen ieder hun eigen gebied.
+  // Daardoor kan de lijn naar een backup nooit meer dwars door gewone verbruikers lopen.
+  const directRows: EnergyNode[][] = [];
+  for (let i = 0; i < direct.length; i += MAX_ROW_SLOTS) directRows.push(direct.slice(i, i + MAX_ROW_SLOTS));
 
-  // Pak clusters in overzichtelijke rijen. Een backup met kinderen blijft één cluster.
-  const rows: FlowItem[][] = [];
-  let current: FlowItem[] = [];
-  let used = 0;
-  for (const item of items) {
-    const slots = Math.min(Math.max(1, item.slots), Math.max(MAX_ROW_SLOTS, item.slots));
-    if (current.length > 0 && used + slots > MAX_ROW_SLOTS) {
-      rows.push(current);
-      current = [];
-      used = 0;
-    }
-    current.push(item);
-    used += slots;
-  }
-  if (current.length > 0) rows.push(current);
-
-  const maxConsumerSlots = Math.max(
-    1,
-    ...rows.map((row) => row.reduce((sum, item) => sum + item.slots, 0)),
-  );
+  const directMax = Math.max(0, ...directRows.map((row) => row.length));
+  const backupColumns = backups.length;
   const topSlots = Math.max(1, producers.length);
-  const contentSlots = Math.max(3, topSlots, maxConsumerSlots);
+  const lowerSlots = Math.max(3, directMax + (backupColumns > 0 ? backupColumns + 1 : 0));
+  const contentSlots = Math.max(3, topSlots, lowerSlots);
   let width = Math.max(MIN_WIDTH, contentSlots * COL + 2 * 138);
   const centerX = width / 2;
   const homeY = producers.length > 0 ? TOP_Y + SOURCE_TO_HOME : TOP_Y + 58;
@@ -324,25 +303,29 @@ function flowLayout(nodes: readonly EnergyNode[], auto: readonly EnergyNode[], l
   grids.forEach((n, i) => pts.set(n.id, { x: SIDE_NODE_X, y: sideY(i, grids.length) }));
   batteries.forEach((n, i) => pts.set(n.id, { x: width - SIDE_NODE_X, y: sideY(i, batteries.length) }));
 
-  // Verbruikers/backup-clusters onder Home. Rijen groeien alleen als dat nodig is.
-  let y = homeY + HOME_TO_FIRST_ROW;
-  rows.forEach((row) => {
-    const totalSlots = row.reduce((sum, item) => sum + item.slots, 0);
-    let cursor = 0;
-    let hasChildren = false;
-    for (const item of row) {
-      const x = centerX + (cursor + (item.slots - 1) / 2 - (totalSlots - 1) / 2) * COL;
-      pts.set(item.node.id, { x, y });
-      if (item.children.length > 0) {
-        hasChildren = true;
-        item.children.forEach((child, i) => {
-          const childX = centerX + (cursor + i - (totalSlots - 1) / 2) * COL;
-          pts.set(child.id, { x: childX, y: y + BACKUP_CHILD_GAP });
-        });
-      }
-      cursor += item.slots;
-    }
-    y += hasChildren ? ROW_GAP + BACKUP_CHILD_GAP : ROW_GAP;
+  const firstRowY = homeY + HOME_TO_FIRST_ROW;
+
+  // Gewone verbruikers: maximaal vijf per rij en daarna automatisch wrappen.
+  // Als er backups zijn, schuift dit raster iets naar links zodat rechts een vrij backup-pad ontstaat.
+  const consumerShift = backupColumns > 0 ? -0.55 * COL : 0;
+  directRows.forEach((row, rowIndex) => {
+    const rowY = firstRowY + rowIndex * ROW_GAP;
+    row.forEach((node, i) => {
+      const x = centerX + consumerShift + (i - (row.length - 1) / 2) * COL;
+      pts.set(node.id, { x, y: rowY });
+    });
+  });
+
+  // Backup-takken krijgen rechts een eigen kolom. De apparaten achter een backup worden
+  // onder elkaar gestapeld. Zo blijft de hele tak leesbaar en kruist hij geen gewone nodes.
+  const backupBaseX = centerX + Math.max(1.55 * COL, ((Math.max(1, directMax) - 1) / 2 + 1.25) * COL);
+  backups.forEach((backup, backupIndex) => {
+    const x = backupBaseX + backupIndex * 1.35 * COL;
+    pts.set(backup.id, { x, y: firstRowY });
+    const children = behind.get(backup.id) ?? [];
+    children.forEach((child, childIndex) => {
+      pts.set(child.id, { x, y: firstRowY + (childIndex + 1) * BACKUP_CHILD_GAP });
+    });
   });
 
   // Trek de SVG strak om de werkelijke inhoud. Hiermee verdwijnt de grote lege onderkant.

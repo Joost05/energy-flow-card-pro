@@ -16,6 +16,12 @@ A custom Home Assistant Lovelace card for visualising live energy flows between 
 
 ## Version history
 
+### v0.8.1
+- Echt inhoudsgestuurde kaarthoogte zonder vaste minimumhoogte.
+- Backup-takken hebben een eigen kolom en hun verbruikers worden verticaal gestapeld.
+- Compactere boven- en ondermarges.
+
+
 ### v0.8.0
 - Adaptive Flow layout that sizes the card to its actual contents.
 - Maximum outer spacing above and below the nodes, removing large empty areas.
