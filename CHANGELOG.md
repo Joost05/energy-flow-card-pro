@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.7.3
+
+- 24-uursgrafieken laden merkbaar sneller door compactere Home Assistant history-requests met `significant_changes_only`.
+- Grafiekdata wordt vijf minuten in het geheugen gecachet en daarnaast tijdelijk in `sessionStorage`, zodat opnieuw openen en terugnavigeren vrijwel direct is.
+- Dubbele gelijktijdige history-requests voor dezelfde node worden samengevoegd.
+- Tot acht veelgebruikte vermogensgrafieken worden na het laden van de kaart rustig op de achtergrond voorverwarmd, met maximaal twee requests tegelijk.
+- De grafiek blijft gereduceerd tot 96 punten over 24 uur; de kaart hoeft daardoor nooit duizenden ruwe meetpunten te tekenen.
+- Extra tests toegevoegd voor history-query en bucketisering.
+- GitHub releaseworkflow gecorrigeerd zodat een repository zonder `package-lock.json` ook correct kan bouwen bij een tag-release.
+- Versienummer bijgewerkt naar **0.7.3**.
+
 ## v0.7.2
 
 - Kaart iets ruimer gemaakt: grotere standaard rasterhoogte, meer interne ruimte en een grotere maximale flowbreedte.

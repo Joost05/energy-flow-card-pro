@@ -1,6 +1,7 @@
-(()=>{
-const __mods={
-"src/card/EnergyFlowCard":(module,exports,require)=>{
+// Energy Flow Card v0.7.3
+(() => {
+const __modules = Object.create(null);
+__modules["src/card/EnergyFlowCard.ts"] = function(require, module, exports) {
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ConfigError = exports.EnergyFlowCard = void 0;
@@ -19,7 +20,12 @@ const PopupRenderer_1 = require("../renderer/PopupRenderer");
 const dom_1 = require("../renderer/dom");
 const styles_1 = require("./styles");
 const HISTORY_HOURS = 24;
-const HISTORY_TTL_MS = 60_000;
+const HISTORY_TTL_MS = 5 * 60_000;
+const HISTORY_BUCKETS = 96;
+const HISTORY_PRELOAD_DELAY_MS = 1_200;
+const HISTORY_PRELOAD_LIMIT = 8;
+const HISTORY_PRELOAD_CONCURRENCY = 2;
+const HISTORY_SESSION_PREFIX = 'efc-history-v1:';
 /** In demo-modus begint de tijd op 300 s, zodat er al "geschiedenis" bestaat voor de grafiek. */
 const DEMO_OFFSET_S = 300;
 class EnergyFlowCard extends HTMLElement {
@@ -29,6 +35,7 @@ class EnergyFlowCard extends HTMLElement {
         this.connEls = [];
         this.popup = new PopupRenderer_1.Popup(() => this.closePopup());
         this.history = new Map();
+        this.historyInFlight = new Map();
         this.demoStart = 0;
         this.reducedMotion = false;
         this.onMotionChange = (ev) => {
@@ -43,14 +50,18 @@ class EnergyFlowCard extends HTMLElement {
         this.config = (0, CardConfig_1.normalizeConfig)(raw); // gooit bij ongeldige config; HA toont dan een foutkaart
         this.closePopup();
         this.history.clear();
+        this.historyInFlight.clear();
+        this.cancelHistoryPreload();
         this.buildStructure();
         this.syncTimer();
         this.update();
     }
     set hass(hass) {
         this._hass = hass;
-        if (!this.config?.demo)
+        if (!this.config?.demo) {
             this.update();
+            this.scheduleHistoryPreload();
+        }
     }
     get hass() {
         return this._hass;
@@ -74,11 +85,14 @@ class EnergyFlowCard extends HTMLElement {
             this.motionQuery.addEventListener('change', this.onMotionChange);
         }
         this.syncTimer();
-        if (this.config)
+        if (this.config) {
             this.update();
+            this.scheduleHistoryPreload();
+        }
     }
     disconnectedCallback() {
         this.motionQuery?.removeEventListener('change', this.onMotionChange);
+        this.cancelHistoryPreload();
         this.stopTimer();
     }
     // ----- Opbouw -----------------------------------------------------------------------------
@@ -292,8 +306,26 @@ class EnergyFlowCard extends HTMLElement {
         const cached = this.history.get(nodeId);
         if (cached && Date.now() - cached.fetchedAt < HISTORY_TTL_MS)
             return;
-        const store = (state) => {
-            this.history.set(nodeId, { state, fetchedAt: Date.now() });
+        const existing = this.historyInFlight.get(nodeId);
+        if (existing)
+            return existing;
+        const task = this.loadHistory(nodeId, node);
+        this.historyInFlight.set(nodeId, task);
+        try {
+            await task;
+        }
+        finally {
+            if (this.historyInFlight.get(nodeId) === task)
+                this.historyInFlight.delete(nodeId);
+        }
+    }
+    async loadHistory(nodeId, node) {
+        const cfg = this.config;
+        if (!cfg)
+            return;
+        const store = (state, fetchedAt = Date.now()) => {
+            this.history.set(nodeId, { state, fetchedAt });
+            this.writeHistorySession(node, state, fetchedAt);
             if (this.openNodeId === nodeId && this.popup.isOpen) {
                 const model = this.popupModel(nodeId);
                 if (model)
@@ -302,6 +334,11 @@ class EnergyFlowCard extends HTMLElement {
         };
         if (cfg.demo) {
             store(this.demoHistory(node));
+            return;
+        }
+        const restored = this.readHistorySession(node);
+        if (restored) {
+            store(restored.state, restored.fetchedAt);
             return;
         }
         const entityId = node.config.power_entity ?? node.config.production_entity;
@@ -314,11 +351,98 @@ class EnergyFlowCard extends HTMLElement {
             const start = end - HISTORY_HOURS * 3_600_000;
             const factor = (0, historyHelper_1.unitFactor)(this._hass.states[entityId]?.attributes.unit_of_measurement);
             const raw = await (0, historyHelper_1.fetchHistory)(this._hass, entityId, HISTORY_HOURS, factor, node.invert, end);
-            const points = (0, historyHelper_1.bucketize)(raw, start, end, 96);
+            const points = (0, historyHelper_1.bucketize)(raw, start, end, HISTORY_BUCKETS);
             store(points.length >= 2 ? { kind: 'ready', points, start, end } : { kind: 'none' });
         }
         catch {
             store({ kind: 'none' });
+        }
+    }
+    /**
+     * Laadt een beperkt aantal veelgebruikte grafieken rustig op de achtergrond.
+     * Daardoor opent de popup meestal direct, zonder de dashboard-start met tientallen requests te belasten.
+     */
+    scheduleHistoryPreload() {
+        this.cancelHistoryPreload();
+        const cfg = this.config;
+        if (!cfg || cfg.demo || !this.isConnected || !this._hass?.callApi || document.hidden)
+            return;
+        this.preloadTimer = window.setTimeout(() => {
+            this.preloadTimer = undefined;
+            void this.preloadHistory();
+        }, HISTORY_PRELOAD_DELAY_MS);
+    }
+    cancelHistoryPreload() {
+        if (this.preloadTimer !== undefined) {
+            window.clearTimeout(this.preloadTimer);
+            this.preloadTimer = undefined;
+        }
+    }
+    async preloadHistory() {
+        const cfg = this.config;
+        if (!cfg || cfg.demo || document.hidden)
+            return;
+        const priority = (node) => {
+            if (node.role === 'home')
+                return 0;
+            if (node.type === 'grid')
+                return 1;
+            if (node.type === 'solar' || node.role === 'source')
+                return 2;
+            if (node.type === 'battery')
+                return 3;
+            return 4;
+        };
+        const nodes = cfg.nodes
+            .filter((node) => !!(node.config.power_entity ?? node.config.production_entity))
+            .sort((a, b) => priority(a) - priority(b))
+            .slice(0, HISTORY_PRELOAD_LIMIT);
+        let next = 0;
+        const worker = async () => {
+            while (next < nodes.length && !document.hidden && this.isConnected) {
+                const node = nodes[next++];
+                if (node)
+                    await this.ensureHistory(node.id);
+            }
+        };
+        await Promise.all(Array.from({ length: Math.min(HISTORY_PRELOAD_CONCURRENCY, nodes.length) }, () => worker()));
+    }
+    historySessionKey(node) {
+        const entityId = node.config.power_entity ?? node.config.production_entity;
+        if (!entityId)
+            return undefined;
+        return `${HISTORY_SESSION_PREFIX}${entityId}|${node.invert ? '1' : '0'}`;
+    }
+    readHistorySession(node) {
+        const key = this.historySessionKey(node);
+        if (!key)
+            return undefined;
+        try {
+            const raw = window.sessionStorage?.getItem(key);
+            if (!raw)
+                return undefined;
+            const parsed = JSON.parse(raw);
+            if (!parsed.state || typeof parsed.fetchedAt !== 'number' || Date.now() - parsed.fetchedAt >= HISTORY_TTL_MS) {
+                window.sessionStorage?.removeItem(key);
+                return undefined;
+            }
+            return { state: parsed.state, fetchedAt: parsed.fetchedAt };
+        }
+        catch {
+            return undefined;
+        }
+    }
+    writeHistorySession(node, state, fetchedAt) {
+        if (state.kind !== 'ready')
+            return;
+        const key = this.historySessionKey(node);
+        if (!key)
+            return;
+        try {
+            window.sessionStorage?.setItem(key, JSON.stringify({ state, fetchedAt }));
+        }
+        catch {
+            // Opslag kan uitgeschakeld of vol zijn; de geheugen-cache blijft dan gewoon werken.
         }
     }
     /** Demo: hergebruikt de demo-engine over de afgelopen 240 s en presenteert dat als "24 uur". */
@@ -356,8 +480,8 @@ function labelPositionFor(node, y, homeY, straight) {
     return y < homeY - 1 ? 'above' : 'below';
 }
 
-},
-"src/card/styles":(module,exports,require)=>{
+};
+__modules["src/card/styles.ts"] = function(require, module, exports) {
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.styles = void 0;
@@ -512,8 +636,8 @@ ha-card.fallback {
 }
 `;
 
-},
-"src/config/CardConfig":(module,exports,require)=>{
+};
+__modules["src/config/CardConfig.ts"] = function(require, module, exports) {
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ConfigError = void 0;
@@ -703,8 +827,8 @@ function parseLayout(raw) {
     return { mode, positions };
 }
 
-},
-"src/demo/DemoEngine":(module,exports,require)=>{
+};
+__modules["src/demo/DemoEngine.ts"] = function(require, module, exports) {
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.demoReadings = demoReadings;
@@ -808,8 +932,8 @@ function demoReadings(nodes, t) {
     return out;
 }
 
-},
-"src/editor/EnergyFlowCardEditor":(module,exports,require)=>{
+};
+__modules["src/editor/EnergyFlowCardEditor.ts"] = function(require, module, exports) {
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EnergyFlowCardEditor = void 0;
@@ -1367,8 +1491,8 @@ class EnergyFlowCardEditor extends HTMLElement {
 }
 exports.EnergyFlowCardEditor = EnergyFlowCardEditor;
 
-},
-"src/helpers/flowHelper":(module,exports,require)=>{
+};
+__modules["src/helpers/flowHelper.ts"] = function(require, module, exports) {
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.flowToHome = flowToHome;
@@ -1591,8 +1715,8 @@ function applyBackupReadings(nodes, connections, readings, demo) {
     }
 }
 
-},
-"src/helpers/historyHelper":(module,exports,require)=>{
+};
+__modules["src/helpers/historyHelper.ts"] = function(require, module, exports) {
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.fetchHistory = fetchHistory;
@@ -1609,7 +1733,8 @@ async function fetchHistory(hass, entityId, hours, unitFactor, invert, now = Dat
         return [];
     const start = new Date(now - hours * HOUR).toISOString();
     const path = `history/period/${start}?filter_entity_id=${encodeURIComponent(entityId)}` +
-        `&end_time=${encodeURIComponent(new Date(now).toISOString())}&minimal_response&no_attributes`;
+        `&end_time=${encodeURIComponent(new Date(now).toISOString())}` +
+        `&minimal_response&no_attributes&significant_changes_only`;
     const response = await hass.callApi('GET', path);
     const states = response?.[0] ?? [];
     const points = [];
@@ -1655,8 +1780,8 @@ function unitFactor(unit) {
     return 1;
 }
 
-},
-"src/helpers/i18n":(module,exports,require)=>{
+};
+__modules["src/helpers/i18n.ts"] = function(require, module, exports) {
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.t = t;
@@ -1839,8 +1964,8 @@ function hassLanguage(hass) {
     return hass?.locale?.language ?? hass?.language;
 }
 
-},
-"src/helpers/stateHelper":(module,exports,require)=>{
+};
+__modules["src/helpers/stateHelper.ts"] = function(require, module, exports) {
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.parsePower = parsePower;
@@ -1932,8 +2057,8 @@ function round(value, decimals) {
     return String(Math.round(value * factor) / factor);
 }
 
-},
-"src/index":(module,exports,require)=>{
+};
+__modules["src/index.ts"] = function(require, module, exports) {
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const EnergyFlowCard_1 = require("./card/EnergyFlowCard");
@@ -1951,10 +2076,10 @@ if (!window.customCards.some((c) => c.type === 'energy-flow-card')) {
         preview: true,
     });
 }
-console.info('%c ENERGY-FLOW-CARD %c 0.7.2 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
+console.info('%c ENERGY-FLOW-CARD %c 0.7.3 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
 
-},
-"src/layout/AutoLayout":(module,exports,require)=>{
+};
+__modules["src/layout/AutoLayout.ts"] = function(require, module, exports) {
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.STRAIGHT_ROW_GAP = exports.HOME_RADIUS = exports.NODE_RADIUS = void 0;
@@ -2326,8 +2451,8 @@ function straightLayout(nodes, auto, links) {
     return { width: Math.round(width), height: Math.round(height), positions };
 }
 
-},
-"src/models/Connection":(module,exports,require)=>{
+};
+__modules["src/models/Connection.ts"] = function(require, module, exports) {
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createConnection = createConnection;
@@ -2379,8 +2504,8 @@ function parentOf(node, nodes) {
     return parent?.type === 'backup' ? parent : undefined;
 }
 
-},
-"src/models/Node":(module,exports,require)=>{
+};
+__modules["src/models/Node.ts"] = function(require, module, exports) {
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createNode = createNode;
@@ -2462,8 +2587,8 @@ function fieldLabelKey(field, type) {
     return field.replace(/_entity$/, '');
 }
 
-},
-"src/renderer/ConnectionRenderer":(module,exports,require)=>{
+};
+__modules["src/renderer/ConnectionRenderer.ts"] = function(require, module, exports) {
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.computeGeometry = computeGeometry;
@@ -2646,8 +2771,8 @@ function createConnectionElement(conn, from, to, curved, color, orthogonal = fal
     return { el: g, update };
 }
 
-},
-"src/renderer/NodeRenderer":(module,exports,require)=>{
+};
+__modules["src/renderer/NodeRenderer.ts"] = function(require, module, exports) {
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.displayNameOf = displayNameOf;
@@ -2819,8 +2944,8 @@ labelPosition = 'below') {
     return { el: g, update };
 }
 
-},
-"src/renderer/PopupRenderer":(module,exports,require)=>{
+};
+__modules["src/renderer/PopupRenderer.ts"] = function(require, module, exports) {
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Popup = void 0;
@@ -2932,8 +3057,8 @@ class Popup {
 }
 exports.Popup = Popup;
 
-},
-"src/renderer/dom":(module,exports,require)=>{
+};
+__modules["src/renderer/dom.ts"] = function(require, module, exports) {
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.svg = svg;
@@ -2971,8 +3096,8 @@ function setAttr(el, name, value) {
         el.setAttribute(name, value);
 }
 
-},
-"src/types/EntityStatus":(module,exports,require)=>{
+};
+__modules["src/types/EntityStatus.ts"] = function(require, module, exports) {
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EntityStatus = void 0;
@@ -3011,8 +3136,8 @@ function hasValue(status) {
     return status === EntityStatus.Valid || status === EntityStatus.Zero || status === EntityStatus.Charging;
 }
 
-},
-"src/types/NodeType":(module,exports,require)=>{
+};
+__modules["src/types/NodeType.ts"] = function(require, module, exports) {
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TYPES_WITH_DEFAULT_ICON = exports.NODE_TYPES = void 0;
@@ -3076,15 +3201,15 @@ function roleOf(type) {
 /** Home, Grid, PV en Battery krijgen standaard een icoon; bij andere apparaten is het optioneel. */
 exports.TYPES_WITH_DEFAULT_ICON = new Set(['home', 'grid', 'solar', 'battery', 'backup']);
 
-},
-"src/types/hass":(module,exports,require)=>{
+};
+__modules["src/types/hass.ts"] = function(require, module, exports) {
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 
-},
 };
-const __cache={};
-function __norm(parts){const out=[];for(const p of parts){if(!p||p===".")continue;if(p==="..")out.pop();else out.push(p);}return out.join("/");}
-function __req(id,from=""){let key=id;if(id.startsWith(".")){const base=from.split("/").slice(0,-1);key=__norm(base.concat(id.split("/")));}key=key.replace(/\.js$/," ").trim();if(!__mods[key]) throw new Error("energy-flow-card v0.7.2: module not found "+key+" from "+from);if(__cache[key]) return __cache[key].exports;const module={exports:{}};__cache[key]=module;const local=(x)=>__req(x,key);__mods[key](module,module.exports,local);return module.exports;}
-__req("src/index");
+const __cache = Object.create(null);
+function __normalize(parts){const out=[];for(const p of parts){if(!p||p==='.')continue;if(p==='..')out.pop();else out.push(p);}return out.join('/');}
+function __resolve(from, req){if(!req.startsWith('.')) throw new Error('External module not bundled: '+req); const base=from.split('/'); base.pop(); let id=__normalize(base.concat(req.split('/'))); if(__modules[id]) return id; if(__modules[id+'.ts']) return id+'.ts'; if(__modules[id+'/index.ts']) return id+'/index.ts'; throw new Error('Module not found: '+req+' from '+from);}
+function __require(id){if(__cache[id]) return __cache[id].exports; const fn=__modules[id]; if(!fn) throw new Error('Module not found: '+id); const module={exports:{}}; __cache[id]=module; const local=(req)=>__require(__resolve(id,req)); fn(local,module,module.exports); return module.exports;}
+__require('src/index.ts');
 })();

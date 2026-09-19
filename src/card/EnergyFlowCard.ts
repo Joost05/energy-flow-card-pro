@@ -21,7 +21,12 @@ import type { Hass } from '../types/hass';
 import { styles } from './styles';
 
 const HISTORY_HOURS = 24;
-const HISTORY_TTL_MS = 60_000;
+const HISTORY_TTL_MS = 5 * 60_000;
+const HISTORY_BUCKETS = 96;
+const HISTORY_PRELOAD_DELAY_MS = 1_200;
+const HISTORY_PRELOAD_LIMIT = 8;
+const HISTORY_PRELOAD_CONCURRENCY = 2;
+const HISTORY_SESSION_PREFIX = 'efc-history-v1:';
 /** In demo-modus begint de tijd op 300 s, zodat er al "geschiedenis" bestaat voor de grafiek. */
 const DEMO_OFFSET_S = 300;
 
@@ -39,6 +44,8 @@ export class EnergyFlowCard extends HTMLElement {
   private openNodeId?: string;
   private computed?: Computed;
   private history = new Map<string, { state: HistoryState; fetchedAt: number }>();
+  private historyInFlight = new Map<string, Promise<void>>();
+  private preloadTimer?: number;
   private timer?: number;
   private demoStart = 0;
   private reducedMotion = false;
@@ -60,6 +67,8 @@ export class EnergyFlowCard extends HTMLElement {
     this.config = normalizeConfig(raw); // gooit bij ongeldige config; HA toont dan een foutkaart
     this.closePopup();
     this.history.clear();
+    this.historyInFlight.clear();
+    this.cancelHistoryPreload();
     this.buildStructure();
     this.syncTimer();
     this.update();
@@ -67,7 +76,10 @@ export class EnergyFlowCard extends HTMLElement {
 
   set hass(hass: Hass) {
     this._hass = hass;
-    if (!this.config?.demo) this.update();
+    if (!this.config?.demo) {
+      this.update();
+      this.scheduleHistoryPreload();
+    }
   }
 
   get hass(): Hass | undefined {
@@ -97,11 +109,15 @@ export class EnergyFlowCard extends HTMLElement {
       this.motionQuery.addEventListener('change', this.onMotionChange);
     }
     this.syncTimer();
-    if (this.config) this.update();
+    if (this.config) {
+      this.update();
+      this.scheduleHistoryPreload();
+    }
   }
 
   disconnectedCallback(): void {
     this.motionQuery?.removeEventListener('change', this.onMotionChange);
+    this.cancelHistoryPreload();
     this.stopTimer();
   }
 
@@ -333,8 +349,25 @@ export class EnergyFlowCard extends HTMLElement {
     const cached = this.history.get(nodeId);
     if (cached && Date.now() - cached.fetchedAt < HISTORY_TTL_MS) return;
 
-    const store = (state: HistoryState): void => {
-      this.history.set(nodeId, { state, fetchedAt: Date.now() });
+    const existing = this.historyInFlight.get(nodeId);
+    if (existing) return existing;
+
+    const task = this.loadHistory(nodeId, node);
+    this.historyInFlight.set(nodeId, task);
+    try {
+      await task;
+    } finally {
+      if (this.historyInFlight.get(nodeId) === task) this.historyInFlight.delete(nodeId);
+    }
+  }
+
+  private async loadHistory(nodeId: string, node: EnergyNode): Promise<void> {
+    const cfg = this.config;
+    if (!cfg) return;
+
+    const store = (state: HistoryState, fetchedAt: number = Date.now()): void => {
+      this.history.set(nodeId, { state, fetchedAt });
+      this.writeHistorySession(node, state, fetchedAt);
       if (this.openNodeId === nodeId && this.popup.isOpen) {
         const model = this.popupModel(nodeId);
         if (model) this.popup.update(model);
@@ -346,20 +379,110 @@ export class EnergyFlowCard extends HTMLElement {
       return;
     }
 
+    const restored = this.readHistorySession(node);
+    if (restored) {
+      store(restored.state, restored.fetchedAt);
+      return;
+    }
+
     const entityId = node.config.power_entity ?? node.config.production_entity;
     if (!entityId || !this._hass?.callApi) {
       store({ kind: 'none' });
       return;
     }
+
     try {
       const end = Date.now();
       const start = end - HISTORY_HOURS * 3_600_000;
       const factor = unitFactor(this._hass.states[entityId]?.attributes.unit_of_measurement);
       const raw = await fetchHistory(this._hass, entityId, HISTORY_HOURS, factor, node.invert, end);
-      const points = bucketize(raw, start, end, 96);
+      const points = bucketize(raw, start, end, HISTORY_BUCKETS);
       store(points.length >= 2 ? { kind: 'ready', points, start, end } : { kind: 'none' });
     } catch {
       store({ kind: 'none' });
+    }
+  }
+
+  /**
+   * Laadt een beperkt aantal veelgebruikte grafieken rustig op de achtergrond.
+   * Daardoor opent de popup meestal direct, zonder de dashboard-start met tientallen requests te belasten.
+   */
+  private scheduleHistoryPreload(): void {
+    this.cancelHistoryPreload();
+    const cfg = this.config;
+    if (!cfg || cfg.demo || !this.isConnected || !this._hass?.callApi || document.hidden) return;
+
+    this.preloadTimer = window.setTimeout(() => {
+      this.preloadTimer = undefined;
+      void this.preloadHistory();
+    }, HISTORY_PRELOAD_DELAY_MS);
+  }
+
+  private cancelHistoryPreload(): void {
+    if (this.preloadTimer !== undefined) {
+      window.clearTimeout(this.preloadTimer);
+      this.preloadTimer = undefined;
+    }
+  }
+
+  private async preloadHistory(): Promise<void> {
+    const cfg = this.config;
+    if (!cfg || cfg.demo || document.hidden) return;
+
+    const priority = (node: EnergyNode): number => {
+      if (node.role === 'home') return 0;
+      if (node.type === 'grid') return 1;
+      if (node.type === 'solar' || node.role === 'source') return 2;
+      if (node.type === 'battery') return 3;
+      return 4;
+    };
+
+    const nodes = cfg.nodes
+      .filter((node) => !!(node.config.power_entity ?? node.config.production_entity))
+      .sort((a, b) => priority(a) - priority(b))
+      .slice(0, HISTORY_PRELOAD_LIMIT);
+
+    let next = 0;
+    const worker = async (): Promise<void> => {
+      while (next < nodes.length && !document.hidden && this.isConnected) {
+        const node = nodes[next++];
+        if (node) await this.ensureHistory(node.id);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(HISTORY_PRELOAD_CONCURRENCY, nodes.length) }, () => worker()));
+  }
+
+  private historySessionKey(node: EnergyNode): string | undefined {
+    const entityId = node.config.power_entity ?? node.config.production_entity;
+    if (!entityId) return undefined;
+    return `${HISTORY_SESSION_PREFIX}${entityId}|${node.invert ? '1' : '0'}`;
+  }
+
+  private readHistorySession(node: EnergyNode): { state: HistoryState; fetchedAt: number } | undefined {
+    const key = this.historySessionKey(node);
+    if (!key) return undefined;
+    try {
+      const raw = window.sessionStorage?.getItem(key);
+      if (!raw) return undefined;
+      const parsed = JSON.parse(raw) as { state?: HistoryState; fetchedAt?: number };
+      if (!parsed.state || typeof parsed.fetchedAt !== 'number' || Date.now() - parsed.fetchedAt >= HISTORY_TTL_MS) {
+        window.sessionStorage?.removeItem(key);
+        return undefined;
+      }
+      return { state: parsed.state, fetchedAt: parsed.fetchedAt };
+    } catch {
+      return undefined;
+    }
+  }
+
+  private writeHistorySession(node: EnergyNode, state: HistoryState, fetchedAt: number): void {
+    if (state.kind !== 'ready') return;
+    const key = this.historySessionKey(node);
+    if (!key) return;
+    try {
+      window.sessionStorage?.setItem(key, JSON.stringify({ state, fetchedAt }));
+    } catch {
+      // Opslag kan uitgeschakeld of vol zijn; de geheugen-cache blijft dan gewoon werken.
     }
   }
 

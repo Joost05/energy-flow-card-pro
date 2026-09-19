@@ -32,7 +32,8 @@ export async function fetchHistory(
   const start = new Date(now - hours * HOUR).toISOString();
   const path =
     `history/period/${start}?filter_entity_id=${encodeURIComponent(entityId)}` +
-    `&end_time=${encodeURIComponent(new Date(now).toISOString())}&minimal_response&no_attributes`;
+    `&end_time=${encodeURIComponent(new Date(now).toISOString())}` +
+    `&minimal_response&no_attributes&significant_changes_only`;
   const response = await hass.callApi<RawState[][]>('GET', path);
   const states = response?.[0] ?? [];
 
