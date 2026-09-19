@@ -1,6 +1,6 @@
-# Energy Flow Card
+# Energy Flow Card Pro
 
-A custom Home Assistant Lovelace card for visualizing live energy flows, device-level power, history and optional electricity pricing.
+A custom Home Assistant Lovelace card for advanced live energy flows, device-level power, history, grouping and optional electricity pricing.
 
 ## Features
 
@@ -24,6 +24,14 @@ A custom Home Assistant Lovelace card for visualizing live energy flows, device-
 - Demo mode with example energy prices for testing without sensors
 
 ## Version history
+
+### v0.9.2
+
+- Renamed the public product/HACS/package branding to **Energy Flow Card Pro** while keeping `custom:energy-flow-card` for backward compatibility.
+- Replaced the compact arrow-only price badge with a clearer two-part **Import / Export** price panel.
+- Kept price values compact at two decimals and made the price panel responsive on narrow cards.
+- Fixed wizard step-number alignment so all four steps keep the number and label on one horizontal line.
+- Finalized the 0.9 pricing UI polish before the 0.10 three-phase/network-analysis work.
 
 ### v0.9.1
 
@@ -127,7 +135,7 @@ Until this repository is added to the HACS default store, add it as a custom rep
 2. Open **Custom repositories**.
 3. Add the GitHub repository URL.
 4. Select **Dashboard** as the category.
-5. Install **Energy Flow Card**.
+5. Install **Energy Flow Card Pro**.
 6. Reload the browser if Home Assistant asks you to.
 
 For a private development repository, install the built file manually until the repository is publicly accessible to HACS.

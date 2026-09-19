@@ -23,8 +23,6 @@ ha-card.fallback {
 .stage { position: relative; padding: 10px 12px 18px; min-height: 0; }
 .flow { display: block; width: 100%; max-width: 860px; height: auto; margin: 0 auto; }
 
-.price-unit { color: var(--secondary-text-color, #727272); margin-left: 2px; }
-
 .badge {
   position: absolute; top: 10px; left: 12px; z-index: 1;
   padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 500;
@@ -32,13 +30,28 @@ ha-card.fallback {
   border: 1px solid var(--divider-color, #e0e0e0);
 }
 
-.price-badge {
+.price-panel {
   position: absolute; top: 10px; right: 12px; z-index: 1;
-  display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end;
-  padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 500;
-  color: var(--secondary-text-color, #727272);
+  display: grid; grid-template-columns: auto 1px auto; align-items: stretch; gap: 9px;
+  padding: 6px 10px; border-radius: 12px;
+  color: var(--primary-text-color, #212121);
   border: 1px solid var(--divider-color, #e0e0e0);
-  background: color-mix(in srgb, var(--card-background-color, #fff) 84%, transparent);
+  background: color-mix(in srgb, var(--card-background-color, #fff) 92%, transparent);
+  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+}
+.price-item { display: flex; flex-direction: column; min-width: 68px; gap: 1px; line-height: 1.15; }
+.price-label {
+  color: var(--secondary-text-color, #727272); font-size: 9px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .035em;
+}
+.price-value { font-size: 11px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.price-divider { width: 1px; background: var(--divider-color, #e0e0e0); }
+
+@media (max-width: 430px) {
+  .price-panel { gap: 7px; padding: 5px 8px; }
+  .price-item { min-width: 58px; }
+  .price-label { font-size: 8px; }
+  .price-value { font-size: 10px; }
 }
 
 .empty { padding: 32px 24px; text-align: center; }

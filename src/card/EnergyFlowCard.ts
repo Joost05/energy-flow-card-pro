@@ -173,10 +173,16 @@ export class EnergyFlowCard extends HTMLElement {
     const currency = cfg.pricing.currency;
     const importText = prices.importPrice === null ? '?' : formatCurrency(prices.importPrice, currency, this.language, 2);
     const exportText = prices.exportPrice === null ? '?' : formatCurrency(prices.exportPrice, currency, this.language, 2);
-    const el = html('div', { class: 'price-badge' },
-      html('span', { 'data-price-import': '' }, `↓ ${importText}`),
-      html('span', { 'data-price-export': '' }, `↑ ${exportText}`),
-      html('span', { class: 'price-unit' }, '/kWh'),
+    const el = html('div', { class: 'price-panel', 'aria-label': t('energy_prices', this.language) },
+      html('div', { class: 'price-item price-import' },
+        html('span', { class: 'price-label' }, t('price_card_import', this.language)),
+        html('span', { class: 'price-value', 'data-price-import': '' }, `${importText}/kWh`),
+      ),
+      html('div', { class: 'price-divider', 'aria-hidden': 'true' }),
+      html('div', { class: 'price-item price-export' },
+        html('span', { class: 'price-label' }, t('price_card_export', this.language)),
+        html('span', { class: 'price-value', 'data-price-export': '' }, `${exportText}/kWh`),
+      ),
     );
     return el;
   }
@@ -272,8 +278,8 @@ export class EnergyFlowCard extends HTMLElement {
     const exportEl = this.shadowRoot?.querySelector('[data-price-export]');
     const importText = prices.importPrice === null ? '?' : formatCurrency(prices.importPrice, cfg.pricing.currency, this.language, 2);
     const exportText = prices.exportPrice === null ? '?' : formatCurrency(prices.exportPrice, cfg.pricing.currency, this.language, 2);
-    if (importEl) importEl.textContent = `↓ ${importText}`;
-    if (exportEl) exportEl.textContent = `↑ ${exportText}`;
+    if (importEl) importEl.textContent = `${importText}/kWh`;
+    if (exportEl) exportEl.textContent = `${exportText}/kWh`;
   }
 
   private flowContext(): FlowContext {

@@ -1,7 +1,7 @@
 {
-  "name": "energy-flow-card",
-  "version": "0.9.1",
-  "description": "Custom Home Assistant Lovelace card that visualizes live energy flows and device-level power.",
+  "name": "energy-flow-card-pro",
+  "version": "0.9.2",
+  "description": "Energy Flow Card Pro for Home Assistant: live energy flows, history, groups and electricity pricing.",
   "private": true,
   "scripts": {
     "build": "esbuild src/index.ts --bundle --minify --format=esm --target=es2021 --outfile=dist/energy-flow-card.js",

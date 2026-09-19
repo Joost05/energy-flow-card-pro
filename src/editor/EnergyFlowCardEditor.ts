@@ -36,11 +36,12 @@ const editorStyles = `
 .wizard { display: flex; flex-direction: column; gap: 16px; }
 .tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--divider-color, #e0e0e0); }
 .tab {
-  flex: 1; padding: 10px 6px; border: 0; background: none; cursor: pointer; font: inherit; color: var(--secondary-text-color);
+  flex: 1; min-width: 0; padding: 10px 6px; border: 0; background: none; cursor: pointer; font: inherit; color: var(--secondary-text-color);
   border-bottom: 3px solid transparent; margin-bottom: -1px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; line-height: 20px;
 }
 .tab[aria-selected="true"] { color: var(--primary-text-color); border-bottom-color: var(--primary-color, #03a9f4); font-weight: 600; }
-.tab .n { display: inline-block; width: 20px; height: 20px; line-height: 20px; border-radius: 50%; margin-right: 6px;
+.tab .n { display: inline-flex; flex: 0 0 20px; align-items: center; justify-content: center; width: 20px; height: 20px; line-height: 1; border-radius: 50%;
   font-size: 12px; background: var(--secondary-background-color, #eee); }
 .tab[aria-selected="true"] .n { background: var(--primary-color, #03a9f4); color: var(--text-primary-color, #fff); }
 .hint { margin: 0; font-size: 14px; color: var(--secondary-text-color); line-height: 1.4; }

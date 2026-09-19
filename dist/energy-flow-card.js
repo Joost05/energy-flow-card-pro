@@ -140,7 +140,7 @@ class EnergyFlowCard extends HTMLElement {
         const currency = cfg.pricing.currency;
         const importText = prices.importPrice === null ? '?' : (0, pricingHelper_1.formatCurrency)(prices.importPrice, currency, this.language, 2);
         const exportText = prices.exportPrice === null ? '?' : (0, pricingHelper_1.formatCurrency)(prices.exportPrice, currency, this.language, 2);
-        const el = (0, dom_1.html)('div', { class: 'price-badge' }, (0, dom_1.html)('span', { 'data-price-import': '' }, `↓ ${importText}`), (0, dom_1.html)('span', { 'data-price-export': '' }, `↑ ${exportText}`), (0, dom_1.html)('span', { class: 'price-unit' }, '/kWh'));
+        const el = (0, dom_1.html)('div', { class: 'price-panel', 'aria-label': (0, i18n_1.t)('energy_prices', this.language) }, (0, dom_1.html)('div', { class: 'price-item price-import' }, (0, dom_1.html)('span', { class: 'price-label' }, (0, i18n_1.t)('price_card_import', this.language)), (0, dom_1.html)('span', { class: 'price-value', 'data-price-import': '' }, `${importText}/kWh`)), (0, dom_1.html)('div', { class: 'price-divider', 'aria-hidden': 'true' }), (0, dom_1.html)('div', { class: 'price-item price-export' }, (0, dom_1.html)('span', { class: 'price-label' }, (0, i18n_1.t)('price_card_export', this.language)), (0, dom_1.html)('span', { class: 'price-value', 'data-price-export': '' }, `${exportText}/kWh`)));
         return el;
     }
     buildFlowSvg(cfg) {
@@ -226,9 +226,9 @@ class EnergyFlowCard extends HTMLElement {
         const importText = prices.importPrice === null ? '?' : (0, pricingHelper_1.formatCurrency)(prices.importPrice, cfg.pricing.currency, this.language, 2);
         const exportText = prices.exportPrice === null ? '?' : (0, pricingHelper_1.formatCurrency)(prices.exportPrice, cfg.pricing.currency, this.language, 2);
         if (importEl)
-            importEl.textContent = `↓ ${importText}`;
+            importEl.textContent = `${importText}/kWh`;
         if (exportEl)
-            exportEl.textContent = `↑ ${exportText}`;
+            exportEl.textContent = `${exportText}/kWh`;
     }
     flowContext() {
         const cfg = this.config;
@@ -707,8 +707,6 @@ ha-card.fallback {
 .stage { position: relative; padding: 10px 12px 18px; min-height: 0; }
 .flow { display: block; width: 100%; max-width: 860px; height: auto; margin: 0 auto; }
 
-.price-unit { color: var(--secondary-text-color, #727272); margin-left: 2px; }
-
 .badge {
   position: absolute; top: 10px; left: 12px; z-index: 1;
   padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 500;
@@ -716,13 +714,28 @@ ha-card.fallback {
   border: 1px solid var(--divider-color, #e0e0e0);
 }
 
-.price-badge {
+.price-panel {
   position: absolute; top: 10px; right: 12px; z-index: 1;
-  display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end;
-  padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 500;
-  color: var(--secondary-text-color, #727272);
+  display: grid; grid-template-columns: auto 1px auto; align-items: stretch; gap: 9px;
+  padding: 6px 10px; border-radius: 12px;
+  color: var(--primary-text-color, #212121);
   border: 1px solid var(--divider-color, #e0e0e0);
-  background: color-mix(in srgb, var(--card-background-color, #fff) 84%, transparent);
+  background: color-mix(in srgb, var(--card-background-color, #fff) 92%, transparent);
+  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+}
+.price-item { display: flex; flex-direction: column; min-width: 68px; gap: 1px; line-height: 1.15; }
+.price-label {
+  color: var(--secondary-text-color, #727272); font-size: 9px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .035em;
+}
+.price-value { font-size: 11px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.price-divider { width: 1px; background: var(--divider-color, #e0e0e0); }
+
+@media (max-width: 430px) {
+  .price-panel { gap: 7px; padding: 5px 8px; }
+  .price-item { min-width: 58px; }
+  .price-label { font-size: 8px; }
+  .price-value { font-size: 10px; }
 }
 
 .empty { padding: 32px 24px; text-align: center; }
@@ -1280,11 +1293,12 @@ const editorStyles = `
 .wizard { display: flex; flex-direction: column; gap: 16px; }
 .tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--divider-color, #e0e0e0); }
 .tab {
-  flex: 1; padding: 10px 6px; border: 0; background: none; cursor: pointer; font: inherit; color: var(--secondary-text-color);
+  flex: 1; min-width: 0; padding: 10px 6px; border: 0; background: none; cursor: pointer; font: inherit; color: var(--secondary-text-color);
   border-bottom: 3px solid transparent; margin-bottom: -1px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; line-height: 20px;
 }
 .tab[aria-selected="true"] { color: var(--primary-text-color); border-bottom-color: var(--primary-color, #03a9f4); font-weight: 600; }
-.tab .n { display: inline-block; width: 20px; height: 20px; line-height: 20px; border-radius: 50%; margin-right: 6px;
+.tab .n { display: inline-flex; flex: 0 0 20px; align-items: center; justify-content: center; width: 20px; height: 20px; line-height: 1; border-radius: 50%;
   font-size: 12px; background: var(--secondary-background-color, #eee); }
 .tab[aria-selected="true"] .n { background: var(--primary-color, #03a9f4); color: var(--text-primary-color, #fff); }
 .hint { margin: 0; font-size: 14px; color: var(--secondary-text-color); line-height: 1.4; }
@@ -2504,6 +2518,9 @@ const nl = {
     pricing_import_entity: "Import-prijssensor",
     pricing_export_entity: "Export-prijssensor",
     pricing_currency: "Valuta",
+    energy_prices: "Energieprijzen",
+    price_card_import: "Inkoop",
+    price_card_export: "Teruglevering",
     current_import_price: "Huidige importprijs",
     current_export_price: "Huidige exportprijs",
     current_cost_rate: "Kosten op dit moment",
@@ -2637,6 +2654,9 @@ const en = {
     pricing_import_entity: "Import price entity",
     pricing_export_entity: "Export price entity",
     pricing_currency: "Currency",
+    energy_prices: "Energy prices",
+    price_card_import: "Import",
+    price_card_export: "Export",
     current_import_price: "Current import price",
     current_export_price: "Current export price",
     current_cost_rate: "Current cost rate",
@@ -2916,12 +2936,12 @@ window.customCards = window.customCards || [];
 if (!window.customCards.some((c) => c.type === 'energy-flow-card')) {
     window.customCards.push({
         type: 'energy-flow-card',
-        name: 'Energy Flow Card',
-        description: 'Laat live zien waar je energie vandaan komt en waar die nu heen gaat.',
+        name: 'Energy Flow Card Pro',
+        description: 'Geavanceerde realtime energieflow, historie, groepen en prijsinformatie voor Home Assistant.',
         preview: true,
     });
 }
-console.info('%c ENERGY-FLOW-CARD %c 0.9.1 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
+console.info('%c ENERGY-FLOW-CARD-PRO %c 0.9.2 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
 
 },
 "src/layout/AutoLayout.ts":function(require,module,exports){

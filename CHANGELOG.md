@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.2
+
+- Changed public branding to **Energy Flow Card Pro** while retaining the existing `energy-flow-card` custom element and `energy-flow-card.js` resource filename for backward compatibility.
+- Reworked the in-card electricity price display into clearly labelled **Import / Export** blocks.
+- Added responsive price-panel styling for narrow cards.
+- Fixed visual alignment of wizard step numbers and labels.
+- Updated HACS/package metadata and documentation for the new branding.
+
 ## 0.9.1
 
 - Added a dedicated **Prices** step to the visual editor.

@@ -14,10 +14,10 @@ window.customCards = window.customCards || [];
 if (!window.customCards.some((c) => c.type === 'energy-flow-card')) {
   window.customCards.push({
     type: 'energy-flow-card',
-    name: 'Energy Flow Card',
-    description: 'Laat live zien waar je energie vandaan komt en waar die nu heen gaat.',
+    name: 'Energy Flow Card Pro',
+    description: 'Geavanceerde realtime energieflow, historie, groepen en prijsinformatie voor Home Assistant.',
     preview: true,
   });
 }
 
-console.info('%c ENERGY-FLOW-CARD %c 0.9.1 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
+console.info('%c ENERGY-FLOW-CARD-PRO %c 0.9.2 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
