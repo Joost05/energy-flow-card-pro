@@ -1,0 +1,110 @@
+name: Home Assistant compatibility watch
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check-home-assistant-release:
+    name: Check latest Home Assistant release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get latest stable Home Assistant release
+        id: ha
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="$(gh api repos/home-assistant/core/releases/latest --jq '.tag_name')"
+          URL="$(gh api repos/home-assistant/core/releases/latest --jq '.html_url')"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Check whether this release is already tracked
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.ha.outputs.tag }}
+        run: |
+          TITLE="Compatibility check: Home Assistant $TAG"
+          COUNT="$(gh issue list             --repo "${{ github.repository }}"             --state all             --search "\"$TITLE\" in:title"             --json title             --jq "[.[] | select(.title == \"$TITLE\")] | length")"
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+
+      - name: Check out Energy Flow Card Pro
+        if: steps.existing.outputs.count == '0'
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        if: steps.existing.outputs.count == '0'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        if: steps.existing.outputs.count == '0'
+        run: npm ci
+
+      - name: Run automated project checks
+        if: steps.existing.outputs.count == '0'
+        id: project_checks
+        continue-on-error: true
+        run: npm run check
+
+      - name: Create compatibility issue
+        if: steps.existing.outputs.count == '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.ha.outputs.tag }}
+          HA_URL: ${{ steps.ha.outputs.url }}
+          CHECK_RESULT: ${{ steps.project_checks.outcome }}
+        run: |
+          if [ "$CHECK_RESULT" = "success" ]; then
+            CHECK_TEXT="✅ Automated TypeScript, test and build checks passed."
+          else
+            CHECK_TEXT="❌ One or more automated project checks failed. Open this workflow run before testing manually."
+          fi
+
+          cat > /tmp/issue.md <<EOF
+A new stable Home Assistant release has been detected: **$TAG**.
+
+Home Assistant release: $HA_URL
+
+### Automated check
+
+$CHECK_TEXT
+
+### Manual compatibility check
+
+Please verify Energy Flow Card Pro on a test Home Assistant installation:
+
+- [ ] Card loads without frontend errors
+- [ ] Visual editor and entity pickers open correctly
+- [ ] Live power values and flow animation update correctly
+- [ ] 24-hour history popup works
+- [ ] Graph hover works on desktop
+- [ ] Graph touch/drag works on phone/tablet without interruption during sensor updates
+- [ ] Whole-card replay works
+- [ ] Hierarchical consumer focus/navigation works
+- [ ] Diagnostics and propagated warnings work
+- [ ] Three-phase L1/L2/L3 popup and graph work
+- [ ] Pricing and Home period statistics render correctly
+- [ ] Light and dark themes look correct
+
+Close this issue after compatibility has been confirmed. If something breaks, keep it open and document the affected Home Assistant version here.
+
+_Automatically created by the Home Assistant compatibility watch workflow._
+EOF
+
+          gh issue create             --repo "${{ github.repository }}"             --title "Compatibility check: Home Assistant $TAG"             --body-file /tmp/issue.md             --assignee "Joost05"
+
+      - name: Fail if automated checks failed
+        if: steps.existing.outputs.count == '0' && steps.project_checks.outcome == 'failure'
+        run: |
+          echo "Automated compatibility checks failed."
+          exit 1
