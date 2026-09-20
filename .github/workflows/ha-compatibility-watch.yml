@@ -2,72 +2,71 @@ name: Home Assistant compatibility watch
 
 on:
   schedule:
-    - cron: "17 6 * * *"
-  workflow_dispatch:
+    - cron: '17 6 * * *'
+  workflow_dispatch: {}
 
 permissions:
   contents: read
   issues: write
 
 jobs:
-  check-home-assistant-release:
+  compatibility:
     name: Check latest Home Assistant release
     runs-on: ubuntu-latest
 
     steps:
-      - name: Get latest stable Home Assistant release
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Get latest Home Assistant release
         id: ha
-        env:
-          GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
-          TAG="$(gh api repos/home-assistant/core/releases/latest --jq '.tag_name')"
-          URL="$(gh api repos/home-assistant/core/releases/latest --jq '.html_url')"
+          TAG="$(curl -fsSL https://api.github.com/repos/home-assistant/core/releases/latest | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"
+          URL="https://github.com/home-assistant/core/releases/tag/$TAG"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "url=$URL" >> "$GITHUB_OUTPUT"
 
-      - name: Check whether this release is already tracked
-        id: existing
+      - name: Check for existing compatibility issue
+        id: issue
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.ha.outputs.tag }}
+        shell: bash
         run: |
           TITLE="Compatibility check: Home Assistant $TAG"
-          COUNT="$(gh issue list             --repo "${{ github.repository }}"             --state all             --search "\"$TITLE\" in:title"             --json title             --jq "[.[] | select(.title == \"$TITLE\")] | length")"
-          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
-
-      - name: Check out Energy Flow Card Pro
-        if: steps.existing.outputs.count == '0'
-        uses: actions/checkout@v4
+          COUNT="$(gh issue list --repo "${{ github.repository }}" --state all --limit 1000 --json title --jq "[.[] | select(.title == \"$TITLE\")] | length")"
+          echo "exists=$COUNT" >> "$GITHUB_OUTPUT"
 
       - name: Set up Node.js
-        if: steps.existing.outputs.count == '0'
+        if: ${{ steps.issue.outputs.exists == '0' }}
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: npm
+          node-version: '20'
 
       - name: Install dependencies
-        if: steps.existing.outputs.count == '0'
-        run: npm ci
+        if: ${{ steps.issue.outputs.exists == '0' }}
+        run: npm install --no-audit --no-fund
 
       - name: Run automated project checks
-        if: steps.existing.outputs.count == '0'
-        id: project_checks
+        if: ${{ steps.issue.outputs.exists == '0' }}
+        id: checks
         continue-on-error: true
         run: npm run check
 
       - name: Create compatibility issue
-        if: steps.existing.outputs.count == '0'
+        if: ${{ steps.issue.outputs.exists == '0' }}
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.ha.outputs.tag }}
           HA_URL: ${{ steps.ha.outputs.url }}
-          CHECK_RESULT: ${{ steps.project_checks.outcome }}
+          CHECK_RESULT: ${{ steps.checks.outcome }}
+        shell: bash
         run: |
           if [ "$CHECK_RESULT" = "success" ]; then
             CHECK_TEXT="✅ Automated TypeScript, test and build checks passed."
           else
-            CHECK_TEXT="❌ One or more automated project checks failed. Open this workflow run before testing manually."
+            CHECK_TEXT="❌ One or more automated project checks failed. Check the workflow run before manual testing."
           fi
 
           cat > /tmp/issue.md <<EOF
@@ -81,14 +80,12 @@ $CHECK_TEXT
 
 ### Manual compatibility check
 
-Please verify Energy Flow Card Pro on a test Home Assistant installation:
-
 - [ ] Card loads without frontend errors
 - [ ] Visual editor and entity pickers open correctly
 - [ ] Live power values and flow animation update correctly
 - [ ] 24-hour history popup works
 - [ ] Graph hover works on desktop
-- [ ] Graph touch/drag works on phone/tablet without interruption during sensor updates
+- [ ] Graph touch/drag works on phone/tablet during sensor updates
 - [ ] Whole-card replay works
 - [ ] Hierarchical consumer focus/navigation works
 - [ ] Diagnostics and propagated warnings work
@@ -96,15 +93,13 @@ Please verify Energy Flow Card Pro on a test Home Assistant installation:
 - [ ] Pricing and Home period statistics render correctly
 - [ ] Light and dark themes look correct
 
-Close this issue after compatibility has been confirmed. If something breaks, keep it open and document the affected Home Assistant version here.
+Close this issue after compatibility has been confirmed. If something breaks, keep it open and document the affected Home Assistant version.
 
 _Automatically created by the Home Assistant compatibility watch workflow._
 EOF
 
           gh issue create             --repo "${{ github.repository }}"             --title "Compatibility check: Home Assistant $TAG"             --body-file /tmp/issue.md             --assignee "Joost05"
 
-      - name: Fail if automated checks failed
-        if: steps.existing.outputs.count == '0' && steps.project_checks.outcome == 'failure'
-        run: |
-          echo "Automated compatibility checks failed."
-          exit 1
+      - name: Mark failed automated checks
+        if: ${{ steps.issue.outputs.exists == '0' && steps.checks.outcome == 'failure' }}
+        run: exit 1
