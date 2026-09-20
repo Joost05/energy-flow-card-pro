@@ -79,6 +79,7 @@ interface InspectorOptions {
   selectedTimestamp?: number;
   selectedLocked?: boolean;
   onSelectedTimestampChange?(timestamp?: number, locked?: boolean): void;
+  onInteractionChange?(active: boolean): void;
 }
 
 function nearestPoint(points: readonly HistoryPoint[], time: number): HistoryPoint | undefined {
@@ -240,6 +241,7 @@ function attachInspector(
     ev.preventDefault();
     locked = true;
     draggingPointer = ev.pointerId;
+    options.onInteractionChange?.(true);
     try { hit.setPointerCapture(ev.pointerId); } catch { /* older webviews */ }
     updateAt(svgXFromPointer(ev));
   });
@@ -247,6 +249,7 @@ function attachInspector(
     if (draggingPointer !== ev.pointerId) return;
     try { if (hit.hasPointerCapture(ev.pointerId)) hit.releasePointerCapture(ev.pointerId); } catch { /* ignore */ }
     draggingPointer = undefined;
+    options.onInteractionChange?.(false);
   };
   hit.addEventListener('pointerup', finishPointer);
   hit.addEventListener('pointercancel', finishPointer);
@@ -365,6 +368,8 @@ export class Popup {
   private signature = '';
   private selectedGraphTimestamp?: number;
   private selectedGraphLocked = false;
+  private graphInteracting = false;
+  private pendingModel?: PopupModel;
 
   constructor(private readonly onClose: () => void) {
     this.heading = html('h2', { class: 'popup-title' });
@@ -395,6 +400,8 @@ export class Popup {
     this.signature = '';
     this.selectedGraphTimestamp = undefined;
     this.selectedGraphLocked = false;
+    this.graphInteracting = false;
+    this.pendingModel = undefined;
     this.el.removeAttribute('hidden');
     this.update(model);
     this.closeButton.focus();
@@ -404,11 +411,21 @@ export class Popup {
     this.el.setAttribute('hidden', '');
     this.selectedGraphTimestamp = undefined;
     this.selectedGraphLocked = false;
+    this.graphInteracting = false;
+    this.pendingModel = undefined;
     this.opener?.focus();
     this.opener = null;
   }
 
   update(model: PopupModel): void {
+    // Do not replace the SVG while a pointer is actively dragging across it.
+    // Replacing the captured element would end the gesture on mobile/tablet and mouse drag.
+    // Keep only the newest live model and render it immediately after pointerup/cancel.
+    if (this.graphInteracting) {
+      this.pendingModel = model;
+      return;
+    }
+
     const phaseSig = model.phases ? {
       enabled: model.phases.enabled,
       series: model.phases.series.map((s) => [s.label, s.history.kind === 'ready' ? [s.history.points.length, s.history.end] : s.history.kind]),
@@ -437,6 +454,14 @@ export class Popup {
       onSelectedTimestampChange: (timestamp, locked = false) => {
         this.selectedGraphTimestamp = timestamp;
         this.selectedGraphLocked = timestamp !== undefined && locked;
+      },
+      onInteractionChange: (active) => {
+        this.graphInteracting = active;
+        if (!active && this.pendingModel) {
+          const pending = this.pendingModel;
+          this.pendingModel = undefined;
+          this.update(pending);
+        }
       },
     };
 

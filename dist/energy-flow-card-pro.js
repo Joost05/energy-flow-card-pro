@@ -1,32 +1,32 @@
 (()=>{
 "use strict";
-const __mods={
-"src/card/EnergyFlowCard.js":(module,exports,require)=>{
+const __mods=Object.create(null),__cache=Object.create(null);
+__mods["src/card/EnergyFlowCard"]=(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ConfigError = exports.EnergyFlowCard = void 0;
-const CardConfig_1 = require("../config/CardConfig");
+const CardConfig_1 = __req("src/config/CardConfig");
 Object.defineProperty(exports, "ConfigError", { enumerable: true, get: function () { return CardConfig_1.ConfigError; } });
-const DemoEngine_1 = require("../demo/DemoEngine");
-const diagnosticsHelper_1 = require("../helpers/diagnosticsHelper");
-const flowHelper_1 = require("../helpers/flowHelper");
-const historyHelper_1 = require("../helpers/historyHelper");
-const replayHelper_1 = require("../helpers/replayHelper");
-const mobileFocusHelper_1 = require("../helpers/mobileFocusHelper");
-const i18n_1 = require("../helpers/i18n");
-const phaseHelper_1 = require("../helpers/phaseHelper");
-const pricingHelper_1 = require("../helpers/pricingHelper");
-const energyStatsHelper_1 = require("../helpers/energyStatsHelper");
-const groupHelper_1 = require("../helpers/groupHelper");
-const stateHelper_1 = require("../helpers/stateHelper");
-const AutoLayout_1 = require("../layout/AutoLayout");
-const Node_1 = require("../models/Node");
-const ConnectionRenderer_1 = require("../renderer/ConnectionRenderer");
-const NodeRenderer_1 = require("../renderer/NodeRenderer");
-const PopupRenderer_1 = require("../renderer/PopupRenderer");
-const dom_1 = require("../renderer/dom");
-const EntityStatus_1 = require("../types/EntityStatus");
-const styles_1 = require("./styles");
+const DemoEngine_1 = __req("src/demo/DemoEngine");
+const diagnosticsHelper_1 = __req("src/helpers/diagnosticsHelper");
+const flowHelper_1 = __req("src/helpers/flowHelper");
+const historyHelper_1 = __req("src/helpers/historyHelper");
+const replayHelper_1 = __req("src/helpers/replayHelper");
+const mobileFocusHelper_1 = __req("src/helpers/mobileFocusHelper");
+const i18n_1 = __req("src/helpers/i18n");
+const phaseHelper_1 = __req("src/helpers/phaseHelper");
+const pricingHelper_1 = __req("src/helpers/pricingHelper");
+const energyStatsHelper_1 = __req("src/helpers/energyStatsHelper");
+const groupHelper_1 = __req("src/helpers/groupHelper");
+const stateHelper_1 = __req("src/helpers/stateHelper");
+const AutoLayout_1 = __req("src/layout/AutoLayout");
+const Node_1 = __req("src/models/Node");
+const ConnectionRenderer_1 = __req("src/renderer/ConnectionRenderer");
+const NodeRenderer_1 = __req("src/renderer/NodeRenderer");
+const PopupRenderer_1 = __req("src/renderer/PopupRenderer");
+const dom_1 = __req("src/renderer/dom");
+const EntityStatus_1 = __req("src/types/EntityStatus");
+const styles_1 = __req("src/card/styles");
 const HISTORY_HOURS = 24;
 const HISTORY_TTL_MS = 5 * 60_000;
 const HISTORY_BUCKETS = 96;
@@ -1121,8 +1121,8 @@ function labelPositionFor(node, y, homeY, straight) {
     return y < homeY - 1 ? 'above' : 'below';
 }
 
-},
-"src/card/styles.js":(module,exports,require)=>{
+};
+__mods["src/card/styles"]=(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.styles = void 0;
@@ -1381,15 +1381,15 @@ ha-card.fallback {
 }
 `;
 
-},
-"src/config/CardConfig.js":(module,exports,require)=>{
+};
+__mods["src/config/CardConfig"]=(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ConfigError = void 0;
 exports.normalizeConfig = normalizeConfig;
-const Connection_1 = require("../models/Connection");
-const Node_1 = require("../models/Node");
-const NodeType_1 = require("../types/NodeType");
+const Connection_1 = __req("src/models/Connection");
+const Node_1 = __req("src/models/Node");
+const NodeType_1 = __req("src/types/NodeType");
 class ConfigError extends Error {
     constructor(message) {
         super(message);
@@ -1718,13 +1718,13 @@ function parseLayout(raw) {
     return { mode, positions };
 }
 
-},
-"src/demo/DemoEngine.js":(module,exports,require)=>{
+};
+__mods["src/demo/DemoEngine"]=(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.demoReadings = demoReadings;
-const flowHelper_1 = require("../helpers/flowHelper");
-const EntityStatus_1 = require("../types/EntityStatus");
+const flowHelper_1 = __req("src/helpers/flowHelper");
+const EntityStatus_1 = __req("src/types/EntityStatus");
 const DAY_SECONDS = 120;
 const BATTERY_SECONDS = 150;
 const wave = (t, period, phase = 0) => Math.sin((2 * Math.PI * t) / period + phase);
@@ -1834,16 +1834,16 @@ function demoReadings(nodes, t) {
     return out;
 }
 
-},
-"src/editor/EnergyFlowCardEditor.js":(module,exports,require)=>{
+};
+__mods["src/editor/EnergyFlowCardEditor"]=(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EnergyFlowCardEditor = void 0;
-const CardConfig_1 = require("../config/CardConfig");
-const i18n_1 = require("../helpers/i18n");
-const Node_1 = require("../models/Node");
-const dom_1 = require("../renderer/dom");
-const NodeType_1 = require("../types/NodeType");
+const CardConfig_1 = __req("src/config/CardConfig");
+const i18n_1 = __req("src/helpers/i18n");
+const Node_1 = __req("src/models/Node");
+const dom_1 = __req("src/renderer/dom");
+const NodeType_1 = __req("src/types/NodeType");
 const SELECTABLE_TYPES = NodeType_1.NODE_TYPES.filter((type) => type !== 'home');
 const POWER_FIELDS = new Set(['power_entity', 'charge_power_entity', 'discharge_power_entity', 'production_entity', 'phase_l1_power_entity', 'phase_l2_power_entity', 'phase_l3_power_entity']);
 const ICON_PRESETS = [
@@ -2688,8 +2688,8 @@ class EnergyFlowCardEditor extends HTMLElement {
 }
 exports.EnergyFlowCardEditor = EnergyFlowCardEditor;
 
-},
-"src/helpers/diagnosticsHelper.js":(module,exports,require)=>{
+};
+__mods["src/helpers/diagnosticsHelper"]=(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.computeDiagnostics = computeDiagnostics;
@@ -2868,13 +2868,13 @@ function highestSeverity(items) {
     return 'info';
 }
 
-},
-"src/helpers/energyStatsHelper.js":(module,exports,require)=>{
+};
+__mods["src/helpers/energyStatsHelper"]=(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.fetchEnergyStats = fetchEnergyStats;
 exports.demoEnergyStats = demoEnergyStats;
-const pricingHelper_1 = require("./pricingHelper");
+const pricingHelper_1 = __req("src/helpers/pricingHelper");
 function energyToKWh(value, unit) {
     const u = typeof unit === 'string' ? unit.trim().toLowerCase() : '';
     if (u === 'wh')
@@ -3068,8 +3068,8 @@ function demoEnergyStats(period, now = Date.now()) {
     };
 }
 
-},
-"src/helpers/flowHelper.js":(module,exports,require)=>{
+};
+__mods["src/helpers/flowHelper"]=(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.flowToHome = flowToHome;
@@ -3078,8 +3078,8 @@ exports.readNode = readNode;
 exports.computeFlows = computeFlows;
 exports.computeHomeReading = computeHomeReading;
 exports.applyBackupReadings = applyBackupReadings;
-const EntityStatus_1 = require("../types/EntityStatus");
-const stateHelper_1 = require("./stateHelper");
+const EntityStatus_1 = __req("src/types/EntityStatus");
+const stateHelper_1 = __req("src/helpers/stateHelper");
 function flowToHome(node, reading) {
     if (reading.watts === null)
         return null;
@@ -3276,17 +3276,17 @@ function applyBackupReadings(nodes, connections, readings, demo) {
     }
 }
 
-},
-"src/helpers/groupHelper.js":(module,exports,require)=>{
+};
+__mods["src/helpers/groupHelper"]=(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.groupedGroups = groupedGroups;
 exports.createGroupNode = createGroupNode;
 exports.buildDisplayGraph = buildDisplayGraph;
 exports.applyGroupReadings = applyGroupReadings;
-const Connection_1 = require("../models/Connection");
-const Node_1 = require("../models/Node");
-const EntityStatus_1 = require("../types/EntityStatus");
+const Connection_1 = __req("src/models/Connection");
+const Node_1 = __req("src/models/Node");
+const EntityStatus_1 = __req("src/types/EntityStatus");
 function groupedGroups(cfg) {
     return cfg.groups.filter((g) => g.display === 'grouped');
 }
@@ -3344,15 +3344,15 @@ function applyGroupReadings(groups, groupNodes, readings) {
     }
 }
 
-},
-"src/helpers/historyHelper.js":(module,exports,require)=>{
+};
+__mods["src/helpers/historyHelper"]=(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.fetchHistoryBatch = fetchHistoryBatch;
 exports.fetchHistory = fetchHistory;
 exports.bucketize = bucketize;
 exports.unitFactor = unitFactor;
-const stateHelper_1 = require("./stateHelper");
+const stateHelper_1 = __req("src/helpers/stateHelper");
 const HOUR = 3_600_000;
 async function fetchHistoryBatch(hass, entityIds, hours, now = Date.now()) {
     const uniqueIds = [...new Set(entityIds.filter(Boolean))];
@@ -3417,8 +3417,8 @@ function unitFactor(unit) {
     return 1;
 }
 
-},
-"src/helpers/i18n.js":(module,exports,require)=>{
+};
+__mods["src/helpers/i18n"]=(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.t = t;
@@ -3827,8 +3827,8 @@ function hassLanguage(hass) {
     return hass?.locale?.language ?? hass?.language;
 }
 
-},
-"src/helpers/mobileFocusHelper.js":(module,exports,require)=>{
+};
+__mods["src/helpers/mobileFocusHelper"]=(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.descendantConsumerIds = descendantConsumerIds;
@@ -3899,8 +3899,8 @@ function buildMobileFocusGraph(nodes, connections, requestedFocusId) {
     };
 }
 
-},
-"src/helpers/phaseHelper.js":(module,exports,require)=>{
+};
+__mods["src/helpers/phaseHelper"]=(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deriveL1Power = deriveL1Power;
@@ -3928,8 +3928,8 @@ function deriveL1History(total, l2, l3) {
     return result;
 }
 
-},
-"src/helpers/pricingHelper.js":(module,exports,require)=>{
+};
+__mods["src/helpers/pricingHelper"]=(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.readPrices = readPrices;
@@ -4121,8 +4121,8 @@ async function fetchTodayExportRevenue(hass, exportEnergyEntity, pricing, now = 
     return result?.exportRevenue ?? null;
 }
 
-},
-"src/helpers/replayHelper.js":(module,exports,require)=>{
+};
+__mods["src/helpers/replayHelper"]=(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.nearestHistoryPoint = nearestHistoryPoint;
@@ -4154,8 +4154,8 @@ function replayRange(series) {
     return end > start ? { start, end } : undefined;
 }
 
-},
-"src/helpers/stateHelper.js":(module,exports,require)=>{
+};
+__mods["src/helpers/stateHelper"]=(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.parsePower = parsePower;
@@ -4164,7 +4164,7 @@ exports.readPower = readPower;
 exports.readNumber = readNumber;
 exports.formatPower = formatPower;
 exports.formatPercent = formatPercent;
-const EntityStatus_1 = require("../types/EntityStatus");
+const EntityStatus_1 = __req("src/types/EntityStatus");
 const NUMBER_PATTERN = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
 function parsePower(value, unit) {
     let n;
@@ -4239,12 +4239,12 @@ function round(value, decimals) {
     return String(Math.round(value * factor) / factor);
 }
 
-},
-"src/index.js":(module,exports,require)=>{
+};
+__mods["src/index"]=(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-const EnergyFlowCard_1 = require("./card/EnergyFlowCard");
-const EnergyFlowCardEditor_1 = require("./editor/EnergyFlowCardEditor");
+const EnergyFlowCard_1 = __req("src/card/EnergyFlowCard");
+const EnergyFlowCardEditor_1 = __req("src/editor/EnergyFlowCardEditor");
 if (!customElements.get('energy-flow-card-pro'))
     customElements.define('energy-flow-card-pro', EnergyFlowCard_1.EnergyFlowCard);
 if (!customElements.get('energy-flow-card-pro-editor'))
@@ -4260,13 +4260,13 @@ if (!window.customCards.some((c) => c.type === 'energy-flow-card-pro')) {
 }
 console.info('%c ENERGY-FLOW-CARD-PRO %c 1.0.0 ', 'color:#fff;background:#33b07a;font-weight:600', 'color:#33b07a');
 
-},
-"src/layout/AutoLayout.js":(module,exports,require)=>{
+};
+__mods["src/layout/AutoLayout"]=(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.STRAIGHT_ROW_GAP = exports.HOME_RADIUS = exports.NODE_RADIUS = void 0;
 exports.computeLayout = computeLayout;
-const Connection_1 = require("../models/Connection");
+const Connection_1 = __req("src/models/Connection");
 exports.NODE_RADIUS = 38;
 exports.HOME_RADIUS = 46;
 exports.STRAIGHT_ROW_GAP = 176;
@@ -4706,8 +4706,8 @@ function straightLayout(nodes, auto, links) {
     return { width: Math.round(width), height: Math.round(height), positions };
 }
 
-},
-"src/models/Connection.js":(module,exports,require)=>{
+};
+__mods["src/models/Connection"]=(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createConnection = createConnection;
@@ -4751,15 +4751,15 @@ function parentOf(node, nodes) {
     return parent && (parent.type === 'backup' || parent.role === 'consumer') ? parent : undefined;
 }
 
-},
-"src/models/Node.js":(module,exports,require)=>{
+};
+__mods["src/models/Node"]=(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createNode = createNode;
 exports.generateId = generateId;
 exports.advancedFieldsFor = advancedFieldsFor;
 exports.fieldLabelKey = fieldLabelKey;
-const NodeType_1 = require("../types/NodeType");
+const NodeType_1 = __req("src/types/NodeType");
 function createNode(config, type, id) {
     return {
         id,
@@ -4844,15 +4844,15 @@ function fieldLabelKey(field, type) {
     return field.replace(/_entity$/, '');
 }
 
-},
-"src/renderer/ConnectionRenderer.js":(module,exports,require)=>{
+};
+__mods["src/renderer/ConnectionRenderer"]=(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.computeGeometry = computeGeometry;
 exports.particleDuration = particleDuration;
 exports.createConnectionElement = createConnectionElement;
-const AutoLayout_1 = require("../layout/AutoLayout");
-const dom_1 = require("./dom");
+const AutoLayout_1 = __req("src/layout/AutoLayout");
+const dom_1 = __req("src/renderer/dom");
 const GAP = 3;
 const PARTICLES = 3;
 const f1 = (n) => n.toFixed(1);
@@ -5016,18 +5016,18 @@ function createConnectionElement(conn, from, to, curved, color, orthogonal = fal
     return { el: g, update };
 }
 
-},
-"src/renderer/NodeRenderer.js":(module,exports,require)=>{
+};
+__mods["src/renderer/NodeRenderer"]=(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.displayNameOf = displayNameOf;
 exports.describeNode = describeNode;
 exports.createNodeElement = createNodeElement;
-const i18n_1 = require("../helpers/i18n");
-const stateHelper_1 = require("../helpers/stateHelper");
-const EntityStatus_1 = require("../types/EntityStatus");
-const NodeType_1 = require("../types/NodeType");
-const dom_1 = require("./dom");
+const i18n_1 = __req("src/helpers/i18n");
+const stateHelper_1 = __req("src/helpers/stateHelper");
+const EntityStatus_1 = __req("src/types/EntityStatus");
+const NodeType_1 = __req("src/types/NodeType");
+const dom_1 = __req("src/renderer/dom");
 const DEFAULT_NAMES = { home: 'home', grid: 'grid', solar: 'solar', battery: 'battery', backup: 'type_backup' };
 function displayNameOf(node, language) {
     if (node.name)
@@ -5201,16 +5201,16 @@ function createNodeElement(node, center, radius, onOpen, labelPosition = 'below'
     return { el: g, update };
 }
 
-},
-"src/renderer/PopupRenderer.js":(module,exports,require)=>{
+};
+__mods["src/renderer/PopupRenderer"]=(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Popup = void 0;
 exports.buildGraph = buildGraph;
 exports.buildPhaseGraph = buildPhaseGraph;
-const i18n_1 = require("../helpers/i18n");
-const stateHelper_1 = require("../helpers/stateHelper");
-const dom_1 = require("./dom");
+const i18n_1 = __req("src/helpers/i18n");
+const stateHelper_1 = __req("src/helpers/stateHelper");
+const dom_1 = __req("src/renderer/dom");
 const W = 320;
 const H = 128;
 const PAD = { l: 6, r: 6, t: 20, b: 20 };
@@ -5365,6 +5365,7 @@ function attachInspector(root, start, end, series, format, language, options = {
         ev.preventDefault();
         locked = true;
         draggingPointer = ev.pointerId;
+        options.onInteractionChange?.(true);
         try {
             hit.setPointerCapture(ev.pointerId);
         }
@@ -5380,6 +5381,7 @@ function attachInspector(root, start, end, series, format, language, options = {
         }
         catch { }
         draggingPointer = undefined;
+        options.onInteractionChange?.(false);
     };
     hit.addEventListener('pointerup', finishPointer);
     hit.addEventListener('pointercancel', finishPointer);
@@ -5461,6 +5463,7 @@ class Popup {
         this.opener = null;
         this.signature = '';
         this.selectedGraphLocked = false;
+        this.graphInteracting = false;
         this.heading = (0, dom_1.html)('h2', { class: 'popup-title' });
         this.closeButton = (0, dom_1.html)('button', { class: 'popup-close', type: 'button' }, '×');
         this.body = (0, dom_1.html)('div', { class: 'popup-body' });
@@ -5487,6 +5490,8 @@ class Popup {
         this.signature = '';
         this.selectedGraphTimestamp = undefined;
         this.selectedGraphLocked = false;
+        this.graphInteracting = false;
+        this.pendingModel = undefined;
         this.el.removeAttribute('hidden');
         this.update(model);
         this.closeButton.focus();
@@ -5495,10 +5500,16 @@ class Popup {
         this.el.setAttribute('hidden', '');
         this.selectedGraphTimestamp = undefined;
         this.selectedGraphLocked = false;
+        this.graphInteracting = false;
+        this.pendingModel = undefined;
         this.opener?.focus();
         this.opener = null;
     }
     update(model) {
+        if (this.graphInteracting) {
+            this.pendingModel = model;
+            return;
+        }
         const phaseSig = model.phases ? {
             enabled: model.phases.enabled,
             series: model.phases.series.map((s) => [s.label, s.history.kind === 'ready' ? [s.history.points.length, s.history.end] : s.history.kind]),
@@ -5520,6 +5531,14 @@ class Popup {
             onSelectedTimestampChange: (timestamp, locked = false) => {
                 this.selectedGraphTimestamp = timestamp;
                 this.selectedGraphLocked = timestamp !== undefined && locked;
+            },
+            onInteractionChange: (active) => {
+                this.graphInteracting = active;
+                if (!active && this.pendingModel) {
+                    const pending = this.pendingModel;
+                    this.pendingModel = undefined;
+                    this.update(pending);
+                }
             },
         };
         let graph;
@@ -5597,8 +5616,8 @@ class Popup {
 }
 exports.Popup = Popup;
 
-},
-"src/renderer/dom.js":(module,exports,require)=>{
+};
+__mods["src/renderer/dom"]=(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.svg = svg;
@@ -5635,8 +5654,8 @@ function setAttr(el, name, value) {
         el.setAttribute(name, value);
 }
 
-},
-"src/types/EntityStatus.js":(module,exports,require)=>{
+};
+__mods["src/types/EntityStatus"]=(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EntityStatus = void 0;
@@ -5666,8 +5685,8 @@ function hasValue(status) {
     return status === EntityStatus.Valid || status === EntityStatus.Zero || status === EntityStatus.Charging;
 }
 
-},
-"src/types/NodeType.js":(module,exports,require)=>{
+};
+__mods["src/types/NodeType"]=(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TYPES_WITH_DEFAULT_ICON = exports.NODE_TYPES = void 0;
@@ -5729,15 +5748,12 @@ function roleOf(type) {
 }
 exports.TYPES_WITH_DEFAULT_ICON = new Set(['home', 'grid', 'solar', 'battery', 'backup']);
 
-},
-"src/types/hass.js":(module,exports,require)=>{
+};
+__mods["src/types/hass"]=(module,exports,__req)=>{
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 
-},
 };
-const __cache={};
-function __norm(p){const a=[];for(const s of p.split("/")){if(!s||s===".")continue;if(s==="..")a.pop();else a.push(s);}return a.join("/");}
-function __req(id){id=__norm(id);if(!id.endsWith(".js"))id+=".js";if(__cache[id])return __cache[id].exports;const fn=__mods[id];if(!fn)throw new Error("Module not found: "+id);const m={exports:{}};__cache[id]=m;const base=id.slice(0,id.lastIndexOf("/")+1);const local=(p)=>p.startsWith(".")?__req(__norm(base+p)):__req(p);fn(m,m.exports,local);return m.exports;}
-__req("src/index.js");
+function __req(id){if(__cache[id])return __cache[id].exports;const f=__mods[id];if(!f)throw new Error('Module not found: '+id);const m={exports:{}};__cache[id]=m;f(m,m.exports,__req);return m.exports;}
+__req('src/index');
 })();
