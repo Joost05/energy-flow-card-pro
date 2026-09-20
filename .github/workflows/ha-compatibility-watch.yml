@@ -69,34 +69,34 @@ jobs:
             CHECK_TEXT="❌ One or more automated project checks failed. Check the workflow run before manual testing."
           fi
 
-          cat > /tmp/issue.md <<EOF
-A new stable Home Assistant release has been detected: **$TAG**.
-
-Home Assistant release: $HA_URL
-
-### Automated check
-
-$CHECK_TEXT
-
-### Manual compatibility check
-
-- [ ] Card loads without frontend errors
-- [ ] Visual editor and entity pickers open correctly
-- [ ] Live power values and flow animation update correctly
-- [ ] 24-hour history popup works
-- [ ] Graph hover works on desktop
-- [ ] Graph touch/drag works on phone/tablet during sensor updates
-- [ ] Whole-card replay works
-- [ ] Hierarchical consumer focus/navigation works
-- [ ] Diagnostics and propagated warnings work
-- [ ] Three-phase L1/L2/L3 popup and graph work
-- [ ] Pricing and Home period statistics render correctly
-- [ ] Light and dark themes look correct
-
-Close this issue after compatibility has been confirmed. If something breaks, keep it open and document the affected Home Assistant version.
-
-_Automatically created by the Home Assistant compatibility watch workflow._
-EOF
+          {
+            echo "A new stable Home Assistant release has been detected: **$TAG**."
+            echo
+            echo "Home Assistant release: $HA_URL"
+            echo
+            echo "### Automated check"
+            echo
+            echo "$CHECK_TEXT"
+            echo
+            echo "### Manual compatibility check"
+            echo
+            echo "- [ ] Card loads without frontend errors"
+            echo "- [ ] Visual editor and entity pickers open correctly"
+            echo "- [ ] Live power values and flow animation update correctly"
+            echo "- [ ] 24-hour history popup works"
+            echo "- [ ] Graph hover works on desktop"
+            echo "- [ ] Graph touch/drag works on phone/tablet during sensor updates"
+            echo "- [ ] Whole-card replay works"
+            echo "- [ ] Hierarchical consumer focus/navigation works"
+            echo "- [ ] Diagnostics and propagated warnings work"
+            echo "- [ ] Three-phase L1/L2/L3 popup and graph work"
+            echo "- [ ] Pricing and Home period statistics render correctly"
+            echo "- [ ] Light and dark themes look correct"
+            echo
+            echo "Close this issue after compatibility has been confirmed. If something breaks, keep it open and document the affected Home Assistant version."
+            echo
+            echo "_Automatically created by the Home Assistant compatibility watch workflow._"
+          } > /tmp/issue.md
 
           gh issue create             --repo "${{ github.repository }}"             --title "Compatibility check: Home Assistant $TAG"             --body-file /tmp/issue.md             --assignee "Joost05"
 
