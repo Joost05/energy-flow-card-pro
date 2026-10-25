@@ -47,6 +47,15 @@ ha-card.fallback {
 .price-value { font-size: 11px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .price-divider { width: 1px; background: var(--divider-color, #e0e0e0); }
 
+.stage.price-clearance .price-panel {
+  position: relative;
+  top: auto;
+  right: auto;
+  width: max-content;
+  max-width: 100%;
+  margin: 0 0 8px auto;
+}
+
 @media (max-width: 430px) {
   .price-panel { gap: 7px; padding: 5px 8px; }
   .price-item { min-width: 58px; }
