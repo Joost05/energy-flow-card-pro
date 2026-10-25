@@ -55,19 +55,12 @@ Inspect Grid history with optional L1 / L2 / L3 overlays, plus pricing, costs an
 
 ### HACS (recommended)
 
-Energy Flow Card Pro can be installed as a **HACS custom Dashboard repository**.
+Energy Flow Card Pro is available in the **default HACS repository**.
 
 1. Open **HACS** in Home Assistant.
-2. Open **Custom repositories**.
-3. Add:
-
-   ```text
-   https://github.com/Joost05/energy-flow-card-pro
-   ```
-
-4. Select category **Dashboard**.
-5. Install **Energy Flow Card Pro**.
-6. Reload the Home Assistant frontend if requested.
+2. Search for **Energy Flow Card Pro**.
+3. Open the card and select **Download**.
+4. Reload the Home Assistant frontend if requested.
 
 HACS manages the frontend resource for you and installs:
 
