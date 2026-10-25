@@ -218,6 +218,10 @@ export class EnergyFlowCard extends HTMLElement {
     if (cfg?.title) card.append(html('div', { class: 'title' }, cfg.title));
 
     const stage = html('div', { class: 'stage' });
+    if (cfg && this.compactMobile && cfg.pricing.mode !== 'none') {
+      const sourceCount = this.displayNodes.filter((node) => node.role === 'source').length;
+      if (sourceCount > 1) stage.classList.add('price-clearance');
+    }
     card.append(stage);
 
     if (!cfg || cfg.nodes.length <= 1) {
