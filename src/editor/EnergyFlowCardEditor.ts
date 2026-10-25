@@ -872,6 +872,15 @@ export class EnergyFlowCardEditor extends HTMLElement {
       this.render();
     });
 
+    const historyBar = html('input', { type: 'checkbox' });
+    historyBar.checked = this.config.show_history_bar !== false;
+    historyBar.addEventListener('change', () => {
+      if (historyBar.checked) delete this.config.show_history_bar;
+      else this.config.show_history_bar = false;
+      this.commit();
+      this.render();
+    });
+
     const layoutSelect = html('select');
     for (const [value, key] of [
       ['flow', 'ed_layout_flow'],
@@ -910,6 +919,7 @@ export class EnergyFlowCardEditor extends HTMLElement {
       this.field(t('ed_layout', lang), layoutSelect),
       this.renderColors(),
       card,
+      html('label', { class: 'check' }, historyBar, t('ed_show_history_bar', lang)),
       html('label', { class: 'check' }, demo, t('ed_demo', lang)),
     );
   }

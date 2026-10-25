@@ -228,6 +228,44 @@ export function computeDiagnostics(
   return { byNode, balanceDifferenceWatts, unmeteredConsumptionWatts };
 }
 
+/**
+ * Returns the diagnostic severity that should be shown as a badge for the current visible graph.
+ * Direct issues stay on their own node. A propagated child issue is shown only on the nearest
+ * visible ancestor of the actual problem, preventing duplicate badges up the whole branch.
+ */
+export function visibleDiagnosticSeverity(
+  nodeId: string,
+  visibleNodeIds: ReadonlySet<string>,
+  nodes: readonly EnergyNode[],
+  connections: readonly Connection[],
+  byNode: ReadonlyMap<string, readonly DiagnosticItem[]>,
+): DiagnosticSeverity | undefined {
+  const items = byNode.get(nodeId) ?? [];
+  const visibleItems: DiagnosticItem[] = items.filter((item) => item.code !== 'descendant_issue');
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+
+  for (const item of items) {
+    if (item.code !== 'descendant_issue' || !item.descendantIds?.length) continue;
+    const appliesHere = item.descendantIds.some((sourceId) => {
+      if (visibleNodeIds.has(sourceId)) return false;
+      let currentId = sourceId;
+      const seen = new Set<string>([sourceId]);
+      while (true) {
+        const incoming = connections.find((connection) => connection.to === currentId);
+        if (!incoming || seen.has(incoming.from)) return false;
+        seen.add(incoming.from);
+        const parent = byId.get(incoming.from);
+        if (!parent || (parent.role !== 'consumer' && parent.role !== 'home' && parent.type !== 'backup')) return false;
+        if (visibleNodeIds.has(parent.id)) return parent.id === nodeId;
+        currentId = parent.id;
+      }
+    });
+    if (appliesHere) visibleItems.push(item);
+  }
+
+  return highestSeverity(visibleItems);
+}
+
 export function highestSeverity(items: readonly DiagnosticItem[] | undefined): DiagnosticSeverity | undefined {
   if (!items?.length) return undefined;
   if (items.some((item) => item.severity === 'error')) return 'error';

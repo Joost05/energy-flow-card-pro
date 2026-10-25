@@ -89,6 +89,10 @@ describe('normalizeConfig', () => {
     assert.equal(cfg.demo, true);
     assert.ok(cfg.nodes.length > 3);
   });
+  it('toont de historiebalk standaard en kan hem uitschakelen', () => {
+    assert.equal(normalizeConfig({ type: 'x' }).showHistoryBar, true);
+    assert.equal(normalizeConfig({ type: 'x', show_history_bar: false }).showHistoryBar, false);
+  });
 
   describe('foutafhandeling', () => {
     it('weigert een onbekend type met uitleg', () => {

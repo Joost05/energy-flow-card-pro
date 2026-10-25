@@ -40,6 +40,7 @@ Without an explicit `connections` section, Energy Flow Card Pro creates the norm
 | `title` | string | empty | Optional card title. |
 | `demo` | boolean | `false` | Enables built-in demo data when no real nodes are configured. |
 | `animation` | boolean | `true` | Enables animated flow indicators. |
+| `show_history_bar` | boolean | `true` | Shows the main 24-hour history/replay slider. Set to `false` to hide the bar; node history popups remain available. |
 | `power_format` | `w`, `kw`, `auto` | `w` | Power display format. |
 | `max_power` | number | `5000` | Reference value used for flow scaling. Must be greater than zero. |
 | `animation_speed` | number | `1` | Global flow animation speed multiplier. Must be greater than zero. |
@@ -129,7 +130,7 @@ Important behavior:
 
 - child devices are a **breakdown of the parent** and are not double-counted at Home level;
 - parent nodes can show a **descendant count badge**;
-- warnings in descendants propagate upward;
+- warnings in descendants propagate to the nearest visible ancestor, avoiding duplicate warning badges at multiple visible levels;
 - loops such as `A -> B -> A` are rejected.
 
 <p align="center">

@@ -82,6 +82,8 @@ export interface CardConfig {
   title?: string;
   demo?: boolean;
   animation?: boolean;
+  /** Show the main 24-hour replay/history bar. Defaults to true. */
+  show_history_bar?: boolean;
   power_format?: PowerFormat;
   max_power?: number;
   animation_speed?: number;
@@ -110,6 +112,7 @@ export interface ResolvedConfig {
   title?: string;
   demo: boolean;
   animation: boolean;
+  showHistoryBar: boolean;
   powerFormat: PowerFormat;
   maxPower: number;
   animationSpeed: number;
@@ -187,6 +190,7 @@ export function normalizeConfig(raw: unknown): ResolvedConfig {
     title: typeof raw.title === 'string' ? raw.title : undefined,
     demo,
     animation: raw.animation !== false,
+    showHistoryBar: raw.show_history_bar !== false,
     powerFormat,
     maxPower: positiveNumber(raw.max_power, 5000, 'max_power'),
     animationSpeed: positiveNumber(raw.animation_speed, 1, 'animation_speed'),
