@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { normalizeConfig } from '../src/config/CardConfig';
-import { computeDiagnostics } from '../src/helpers/diagnosticsHelper';
+import { computeDiagnostics, visibleDiagnosticSeverity } from '../src/helpers/diagnosticsHelper';
 import { computeFlows, readNode, type NodeReading } from '../src/helpers/flowHelper';
 import { EntityStatus } from '../src/types/EntityStatus';
 import type { Hass } from '../src/types/hass';
@@ -103,4 +103,34 @@ it('propagates a child diagnostic warning to its consumer ancestors', () => {
   assert.deepEqual(report.byNode.get('stekkerdoos')?.find((i) => i.code === 'descendant_issue')?.descendantIds, ['pc']);
   assert.deepEqual(report.byNode.get('bureau')?.find((i) => i.code === 'descendant_issue')?.descendantIds, ['pc']);
   assert.deepEqual(report.byNode.get('home')?.find((i) => i.code === 'descendant_issue')?.descendantIds, ['pc']);
+});
+
+
+it('shows propagated diagnostics only on the nearest visible ancestor', () => {
+  const cfg = normalizeConfig({
+    nodes: [
+      { name: 'Bureau', type: 'consumer', power_entity: 'sensor.desk' },
+      { name: 'Verdeelblok', type: 'consumer', power_entity: 'sensor.strip', connected_to: 'bureau' },
+      { name: 'PC', type: 'consumer', power_entity: 'sensor.pc', connected_to: 'verdeelblok' },
+    ],
+  });
+  const hass: Hass = { states: {
+    'sensor.desk': entity('300'),
+    'sensor.strip': entity('250'),
+    'sensor.pc': entity('unavailable'),
+  } };
+  const readings = new Map<string, NodeReading>();
+  for (const n of cfg.nodes) if (n.role !== 'home') readings.set(n.id, readNode(n, hass));
+  const flows = computeFlows(cfg.nodes, cfg.connections, readings, hass);
+  readings.set('home', { status: EntityStatus.Valid, watts: 300, charging: false });
+  const report = computeDiagnostics(cfg.nodes, cfg.connections, readings, flows, hass);
+
+  const overview = new Set(['home', 'bureau']);
+  assert.equal(visibleDiagnosticSeverity('home', overview, cfg.nodes, cfg.connections, report.byNode), undefined);
+  assert.equal(visibleDiagnosticSeverity('bureau', overview, cfg.nodes, cfg.connections, report.byNode), 'warning');
+
+  const focused = new Set(['bureau', 'verdeelblok', 'pc']);
+  assert.equal(visibleDiagnosticSeverity('bureau', focused, cfg.nodes, cfg.connections, report.byNode), undefined);
+  assert.equal(visibleDiagnosticSeverity('verdeelblok', focused, cfg.nodes, cfg.connections, report.byNode), undefined);
+  assert.equal(visibleDiagnosticSeverity('pc', focused, cfg.nodes, cfg.connections, report.byNode), 'error');
 });
