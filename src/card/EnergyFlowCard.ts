@@ -1,6 +1,6 @@
 import { ConfigError, ResolvedConfig, normalizeConfig } from '../config/CardConfig';
 import { demoReadings } from '../demo/DemoEngine';
-import { computeDiagnostics, highestSeverity, type DiagnosticItem, type DiagnosticReport } from '../helpers/diagnosticsHelper';
+import { computeDiagnostics, highestSeverity, visibleDiagnosticSeverity, type DiagnosticItem, type DiagnosticReport } from '../helpers/diagnosticsHelper';
 import {
   NodeReading,
   computeFlows,
@@ -236,9 +236,13 @@ export class EnergyFlowCard extends HTMLElement {
         if (nav) stage.append(nav);
       }
       stage.append(this.buildFlowSvg(cfg));
-      const replay = this.buildReplayControls();
-      this.replayControls = replay;
-      card.append(replay);
+      if (cfg.showHistoryBar) {
+        const replay = this.buildReplayControls();
+        this.replayControls = replay;
+        card.append(replay);
+      } else {
+        this.replayControls = undefined;
+      }
     }
 
     card.append(this.popup.el);
@@ -517,10 +521,18 @@ export class EnergyFlowCard extends HTMLElement {
       const reading = this.computed.readings.get(node.id);
       if (reading) {
         const view = describeNode(node, reading, ctx);
-        const issues = node.groupMembers?.length
-          ? node.groupMembers.flatMap((id) => this.computed?.diagnostics.byNode.get(id) ?? [])
-          : this.computed.diagnostics.byNode.get(node.id);
-        view.diagnostic = highestSeverity(issues);
+        if (node.groupMembers?.length) {
+          const issues = node.groupMembers.flatMap((id) => this.computed?.diagnostics.byNode.get(id) ?? []);
+          view.diagnostic = highestSeverity(issues);
+        } else {
+          view.diagnostic = visibleDiagnosticSeverity(
+            node.id,
+            new Set(this.nodeEls.keys()),
+            cfg.nodes,
+            cfg.connections,
+            this.computed.diagnostics.byNode,
+          );
+        }
         view.childCount = countFocusableDescendants(node.id, (this.displayNodes.length ? this.displayNodes : cfg.nodes), (this.displayConnections.length ? this.displayConnections : cfg.connections));
         this.nodeEls.get(node.id)?.update(view);
       }
