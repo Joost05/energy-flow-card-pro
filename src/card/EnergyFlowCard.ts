@@ -516,6 +516,12 @@ export class EnergyFlowCard extends HTMLElement {
     this.computed = this.replayActive ? (this.computeReplay() ?? this.compute()) : this.compute();
     this.updatePriceBadge();
     const ctx = { powerFormat: cfg.powerFormat, language: this.language };
+    const visibleDiagnosticNodeIds = new Set(this.nodeEls.keys());
+    for (const visibleNode of (this.displayNodes.length ? this.displayNodes : cfg.nodes)) {
+      if (this.nodeEls.has(visibleNode.id)) {
+        for (const memberId of visibleNode.groupMembers ?? []) visibleDiagnosticNodeIds.add(memberId);
+      }
+    }
 
     for (const node of (this.displayNodes.length ? this.displayNodes : cfg.nodes)) {
       const reading = this.computed.readings.get(node.id);
@@ -527,7 +533,7 @@ export class EnergyFlowCard extends HTMLElement {
         } else {
           view.diagnostic = visibleDiagnosticSeverity(
             node.id,
-            new Set(this.nodeEls.keys()),
+            visibleDiagnosticNodeIds,
             cfg.nodes,
             cfg.connections,
             this.computed.diagnostics.byNode,
